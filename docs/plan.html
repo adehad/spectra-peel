@@ -1,0 +1,403 @@
+<title>Spectra Peel plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: sticky contents rail + 46rem reading column; a procedural spectrogram strip heads the page. */
+:root {
+  --bg: #f2f3f6;
+  --surface: #ffffff;
+  --fg: #16171d;
+  --muted: #5d6070;
+  --rule: #d9dbe3;
+  --accent: #b2316f;      /* magma magenta */
+  --accent-2: #c9741a;    /* magma amber */
+  --ok: #2f7d4f;
+  --warn: #a8640c;
+  --block: #b3261e;
+  --code-bg: #eceef3;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --measure: 46rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1016; --surface: #171923; --fg: #e7e8ee; --muted: #9a9db0; --rule: #2a2d3b;
+    --accent: #e0619f; --accent-2: #f0a24a; --ok: #6cc290; --warn: #e3a54a; --block: #f07a72;
+    --code-bg: #1d2030; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1016; --surface: #171923; --fg: #e7e8ee; --muted: #9a9db0; --rule: #2a2d3b;
+  --accent: #e0619f; --accent-2: #f0a24a; --ok: #6cc290; --warn: #e3a54a; --block: #f07a72;
+  --code-bg: #1d2030; color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 400 1rem/1.65 var(--font-body);
+  padding-inline: 16px; padding-block: 0 4rem;
+}
+.wrap { max-width: 72rem; margin: 0 auto; }
+header.hero { padding-block: 2.5rem 1.5rem; display: grid; gap: 1rem; }
+.eyebrow { font: 600 0.75rem/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: 1.65rem; font-weight: 700; margin-top: 3rem; margin-bottom: 0.75rem; scroll-margin-top: 1rem; }
+h3 { font-size: 1.15rem; font-weight: 500; margin-top: 1.75rem; margin-bottom: 0.5rem; }
+.lede { font-size: 1.12rem; max-width: 40rem; color: var(--fg); margin: 0; }
+.strip { width: 100%; height: 92px; border-radius: 6px; display: block; background: var(--code-bg); }
+.strip-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; font: 400 0.78rem/1.3 var(--font-mono); color: var(--muted); }
+.strip-legend i { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.35rem; vertical-align: -1px; }
+
+.layout { display: grid; grid-template-columns: 13rem minmax(0, 1fr); gap: 3rem; align-items: start; }
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 1rem); font-size: 0.88rem; display: grid; gap: 0.15rem; padding-top: 3.2rem; }
+nav.toc a { color: var(--muted); text-decoration: none; padding: 0.2rem 0 0.2rem 0.7rem; border-left: 2px solid var(--rule); }
+nav.toc a:hover, nav.toc a.on { color: var(--fg); border-left-color: var(--accent); }
+main { max-width: var(--measure); min-width: 0; }
+p, li { max-width: 65ch; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; }
+pre { background: var(--code-bg); border-radius: 6px; padding: 1rem 1.1rem; overflow-x: auto; font: 400 0.84rem/1.55 var(--font-mono); margin: 1rem 0; }
+pre code { background: none; padding: 0; font-size: inherit; }
+pre .c { color: var(--muted); }
+pre .k { color: var(--accent); }
+pre .s { color: var(--accent-2); }
+pre.mermaid { background: var(--surface); border: 1px solid var(--rule); text-align: center; }
+.scroll { overflow-x: auto; margin: 1rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 600 0.72rem/1.2 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+td.n, th.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pill { display: inline-block; font: 600 0.7rem/1 var(--font-mono); letter-spacing: 0.04em; padding: 0.3rem 0.5rem; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.block { color: var(--block); } .pill.muted { color: var(--muted); }
+.callout { border-left: 3px solid var(--accent-2); background: var(--surface); padding: 0.8rem 1rem; margin: 1.25rem 0; border-radius: 0 6px 6px 0; }
+.callout p { margin: 0; }
+details { border-top: 1px solid var(--rule); padding-block: 0.6rem; }
+details:last-of-type { border-bottom: 1px solid var(--rule); }
+summary { cursor: pointer; font-weight: 600; }
+details > :not(summary) { margin-top: 0.6rem; }
+
+.tabs { margin: 1rem 0; }
+.tablist { display: flex; flex-wrap: wrap; gap: 0.25rem; border-bottom: 1px solid var(--rule); }
+.tablist button { font: 600 0.82rem/1 var(--font-mono); background: none; color: var(--muted); border: 0; border-bottom: 2px solid transparent; padding: 0.6rem 0.75rem; cursor: pointer; }
+.tablist button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.panel { padding-top: 0.75rem; }
+.panel h4 { font: 600 1.05rem/1.3 var(--font-display); margin: 0 0 0.3rem; }
+.done { color: var(--muted); font-size: 0.92rem; margin: 0 0 0.75rem; }
+.panel ul { padding-left: 1.2rem; margin: 0; display: grid; gap: 0.25rem; }
+
+.branches { display: grid; gap: 0.5rem; margin: 1rem 0; font: 400 0.85rem/1.4 var(--font-mono); }
+.branch { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 0.75rem; align-items: baseline; }
+.branch b { font-weight: 600; }
+
+@media (max-width: 60rem) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  nav.toc { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+<header class="hero">
+  <p class="eyebrow">adehad/spectra-peel · design plan · 11 Oct 2026</p>
+  <h1>Spectra Peel</h1>
+  <p class="lede">An offline PWA that peels noise and stems out of an audio file on your own phone or desktop, and shows you exactly what each model took away. This page records every decision from the design grilling and the build order for v1.</p>
+  <canvas class="strip" id="strip" aria-label="Illustrative spectrogram: input on top, the removed band highlighted below" role="img"></canvas>
+  <div class="strip-legend"><span><i style="background:var(--accent-2)"></i>input energy</span><span><i style="background:var(--accent)"></i>removed energy (input minus output)</span><span>illustrative, 0 to 12 kHz, 8 s</span></div>
+</header>
+
+<div class="layout">
+<nav class="toc" id="toc" aria-label="Contents"></nav>
+<main>
+
+<h2 id="summary">Summary</h2>
+<p>File-based audio processing in the browser: load one file (up to an hour), run on-device models over the whole file or a time range, listen, compare, export. Live mic processing is out of scope. Two operations ship in v1: speech denoise with DeepFilterNet3 and four-stem separation with HT-Demucs. The thing nobody else does is the view: a spectrogram of what each model removed, plus live spectrum curves or a waterfall while you scrub.</p>
+<div class="scroll"><table>
+<tr><th>Scope</th><th>Milestones</th><th>Status</th></tr>
+<tr><td>v1</td><td>M0 to M4: repo and spike, import and view, denoise, export and offline install, fast stems</td><td><span class="pill ok">agreed</span></td></tr>
+<tr><td>v1.x</td><td>M5: per-stem specialists, pipelined model loading, desktop ft-bag</td><td><span class="pill muted">after v1</span></td></tr>
+<tr><td>Gate</td><td>M4 depends on the phone spike result (go/no-go on mobile Demucs)</td><td><span class="pill warn">open</span></td></tr>
+</table></div>
+
+<h2 id="decisions">Decisions</h2>
+<p>Each row is one answered question from the grilling, in the order it was settled.</p>
+<div class="scroll"><table>
+<tr><th>Topic</th><th>Decision</th><th>Why</th></tr>
+<tr><td>Repo</td><td><code>adehad/spectra-peel</code>, public, MIT. Commits as <code>adehad</code> with the GitHub noreply address, set locally.</td><td>All planned models are MIT or Apache-2.0. Keeps the work identity out of a personal repo.</td></tr>
+<tr><td>Hosting</td><td>Cloudflare Workers static assets, deployed with the new <code>cf</code> CLI and <code>cloudflare.config.ts</code>.</td><td><code>cf</code> is in open beta. Its config has no documented headers field, so M0 must prove COOP/COEP arrive (via <code>_headers</code>, else a 5-line Worker with <code>runWorkerFirst</code>).</td></tr>
+<tr><td>Runtime</td><td>Bun for install, scripts, tests. Node 22.18+ present for <code>cf</code> itself.</td><td><code>cf</code> does not support Bun as its runtime. Node 24.5 and Bun 1.4 are already installed.</td></tr>
+<tr><td>Models</td><td>Use StemSplitio's published fp32 ONNX files from Hugging Face, pinned by commit SHA. Our own fp16 repo is deferred.</td><td>No conversion work before we know the phone can run anything. fp32 is the worst case for memory, so a pass is conclusive.</td></tr>
+<tr><td>Devices</td><td>Must work: your Android phone and desktop Chrome. Best effort: iOS Safari.</td><td>iOS WebGPU is new and its per-tab memory limit is tight for a 316 MB model.</td></tr>
+<tr><td>First feature</td><td>Denoise first, stems second.</td><td>DFN3 is about 8 MB and is not blocked by the spike, so it proves the whole pipeline.</td></tr>
+<tr><td>Spike</td><td>In-repo <code>spike/</code>, vanilla TS. Local Playwright on a real GPU first, phone later. Does not block app work.</td><td>Only M4 waits on the phone numbers.</td></tr>
+<tr><td>UI framework</td><td>React 19 and TypeScript 7 (<code>tsgo</code>), Vite. Svelte 5 comparison parked for later.</td><td>Matches the oxlint, tsgolint, oxfmt, Vitest and Playwright stack you already use. <code>svelte-check</code> needs the TS JS API that TS 7 lacks.</td></tr>
+<tr><td>Project</td><td>One source file per project. Operations form a tree of derived layers.</td><td>Multitrack (alignment, a mixer per track) is a different product.</td></tr>
+<tr><td>Selection</td><td>Time ranges only in v1, processed with about 3 s of context padding, crossfaded 10 to 20 ms at the edges. Spectral selection is v2.</td><td>Spectral edits are masks in the STFT domain, a different kind of operation.</td></tr>
+<tr><td>Live view</td><td>Toggle between overlaid spectrum curves per layer and a rolling waterfall. Decide after use.</td><td>Both come from one <code>AnalyserNode</code> per layer, so the toggle is cheap.</td></tr>
+<tr><td>Length</td><td>Up to one hour. Streaming everywhere: decode, storage, playback.</td><td>An hour of stereo float32 is about 1.4 GB per layer.</td></tr>
+<tr><td>Codecs</td><td>Mediabunny (WebCodecs) to decode and encode. ffmpeg.wasm only as a lazy fallback.</td><td>Streams in chunks, avoids a 30 MB download.</td></tr>
+<tr><td>Testing</td><td>Unit tests (TDD) for DSP, golden parity against a Python <code>onnxruntime</code> reference, SDR against MUSDB18 previews and VoiceBank+DEMAND.</td><td>Parity catches port bugs worth 0.5 dB that ground truth would hide.</td></tr>
+<tr><td>Export</td><td>Mix or a single layer, whole file or selection. WAV, FLAC, M4A, Opus. MP3 later via <code>@mediabunny/mp3-encoder</code>.</td><td>All stream to disk through Mediabunny.</td></tr>
+<tr><td>Storage</td><td>Layers as 16-bit FLAC (dithered) with a frame index in OPFS. <code>removed</code> computed live, never stored.</td><td>Roughly halves int16 size. FLAC decode costs a few percent of one core for five layers.</td></tr>
+<tr><td>Layout</td><td>Open. Options artifact in progress.</td><td>Stacked panels, Audacity lanes or a spectrogram lens, to be clicked through.</td></tr>
+<tr><td>Repo shape</td><td>Bun workspaces with <code>workspace:*</code>: <code>packages/engine</code>, <code>apps/web</code>, later <code>apps/cli</code>.</td><td>Engine talks to Storage and Inference interfaces, so the golden tests run under Node and a <code>bun build --compile</code> CLI is possible later.</td></tr>
+<tr><td>CI and deploy</td><td>GitHub Actions on every PR. <code>cf deploy</code> from <code>main</code>, a preview URL per PR. Cloudflare account <code>adehad</code>.</td><td>Hosted runners have no GPU, so real-GPU Playwright stays local.</td></tr>
+<tr><td>Updates</td><td>Hashed chunks, engine in its own chunk, ORT WASM pinned. No <code>skipWaiting</code> while a job runs. Each op records engine version and model SHA.</td><td>A 40 minute Demucs job must finish on the code that started it.</td></tr>
+</table></div>
+
+<h2 id="architecture">Architecture</h2>
+<p>The UI thread never decodes, runs a model or touches PCM in bulk. Four workers and one AudioWorklet do the heavy work, and OPFS is the only place audio lives between steps.</p>
+<pre class="mermaid">
+flowchart LR
+  F[Audio file] --> D[Decode worker<br/>Mediabunny + WebCodecs]
+  D --> S[(OPFS<br/>FLAC layers + index)]
+  D --> P[Peaks + spectrogram tiles]
+  P --> S
+  S --> I[Inference worker<br/>ORT Web: webgpu, wasm]
+  M[(OPFS model library)] --> I
+  I --> S
+  S --> R[Reader worker<br/>FLAC decode, read-ahead]
+  R -->|SharedArrayBuffer ring| W[AudioWorklet mixer<br/>one output per layer]
+  W --> G[Gain + AnalyserNode<br/>per layer]
+  G --> O[Speakers]
+  G --> V[Live curves or waterfall]
+  S --> E[Encode worker<br/>export WAV FLAC M4A Opus]
+</pre>
+
+<h3 id="edit-model">Edit model</h3>
+<p>A project is one source plus an append-only log of operations. Undo pops the log and deletes the layers that op produced. The <code>removed</code> layer is a residual: the mixer subtracts two decoded integer streams, so it is exact and costs no disk.</p>
+<pre><code><span class="k">type</span> Range = { start: number; end: number } <span class="c">// samples at the source rate</span>
+
+<span class="k">interface</span> Op {
+  id: OpId;
+  kind: <span class="s">"denoise"</span> | <span class="s">"separate"</span>;
+  input: LayerId | <span class="s">"source"</span>;
+  range?: Range;
+  model: { id: string; sha256: string };
+  engineVersion: string;
+  outputs: LayerId[];
+  state: <span class="s">"queued"</span> | <span class="s">"running"</span> | <span class="s">"paused"</span> | <span class="s">"done"</span> | <span class="s">"failed"</span>;
+}
+
+<span class="k">type</span> LayerData =
+  | { kind: <span class="s">"flac"</span>; path: string }
+  | { kind: <span class="s">"residual"</span>; minuend: LayerId | <span class="s">"source"</span>; subtrahend: LayerId };
+
+<span class="k">interface</span> Layer { id: LayerId; label: string; producedBy: OpId; range?: Range; data: LayerData }
+<span class="k">interface</span> MixState { gains: Record&lt;LayerId, number&gt;; muted: Set&lt;LayerId&gt;; solo?: LayerId; ab: <span class="s">"input"</span> | <span class="s">"mix"</span> }</code></pre>
+
+<h3 id="storage">Storage</h3>
+<pre><code>opfs:/
+  models/&lt;sha256&gt;.onnx                 <span class="c">model library, explicit download, persist() requested</span>
+  projects/&lt;projectId&gt;/
+    project.json                       <span class="c">op log, layers, mix</span>
+    source.flac  source.idx            <span class="c">16-bit FLAC, 4096-sample frames + seek index</span>
+    layers/&lt;layerId&gt;.flac  .idx
+    derived/peaks/&lt;layerId&gt;.bin        <span class="c">min/max pyramid, rebuildable</span>
+    derived/tiles/&lt;layerId&gt;/&lt;zoom&gt;/&lt;n&gt;.bin
+    jobs/&lt;opId&gt;/chunk-&lt;n&gt;.flac         <span class="c">checkpoints so a long job resumes</span></code></pre>
+<div class="scroll"><table>
+<tr><th>One hour, stereo</th><th class="n">Per layer</th><th class="n">Source + 4 stems</th></tr>
+<tr><td>float32</td><td class="n">~1.3 GB</td><td class="n">~6.4 GB</td></tr>
+<tr><td>int16 raw</td><td class="n">~0.65 GB</td><td class="n">~3.2 GB</td></tr>
+<tr><td>16-bit FLAC (estimate)</td><td class="n">~0.25 to 0.4 GB</td><td class="n">~1.2 to 1.6 GB</td></tr>
+</table></div>
+<p>The FLAC row is an estimate, not a measurement: music usually lands at 55 to 60 percent of raw, sparse stems far lower. M1 measures it. Before any operation the app shows its storage and time estimate against <code>navigator.storage.estimate()</code> and refuses if it will not fit.</p>
+
+<h2 id="repo">Repo and tooling</h2>
+<pre><code>spectra-peel/
+  packages/engine/   <span class="c">pure TS: windows, chunking, overlap-add, crossfade, mixer maths, op log; Storage + Inference interfaces</span>
+  apps/web/          <span class="c">React PWA, workers, AudioWorklet, OPFS + ort-web adapters, service worker</span>
+  apps/cli/          <span class="c">later: bun build --compile, fs + ort-node adapters</span>
+  spike/             <span class="c">throwaway perf spike, deleted once the app has a bench page</span>
+  reference/         <span class="c">uv Python project: onnxruntime reference outputs, fixture fetch</span>
+  e2e/               <span class="c">Playwright, real-GPU flags, branded Chrome or Edge</span>
+  docs/              <span class="c">CONTEXT.md, adr/, opfs-ownership.md, spike-results.md</span></code></pre>
+<p>Tooling copies the stack you already like: strict tsconfig (<code>exactOptionalPropertyTypes</code>, <code>noUncheckedIndexedAccess</code>, <code>erasableSyntaxOnly</code>), <code>tsgo</code>, oxlint with type-aware rules via <code>oxlint-tsgolint</code>, oxfmt, jscpd, Vitest 4, Playwright, Tailwind 4, zustand, zod, prek hooks. An oxlint restricted-paths rule stops <code>packages/engine</code> importing DOM or React code.</p>
+
+<h2 id="testing">Testing</h2>
+<div class="scroll"><table>
+<tr><th>Layer</th><th>What it proves</th><th>Data</th></tr>
+<tr><td>Unit (TDD)</td><td>Window sums, overlap-add reconstruction, crossfade gain, residual identity, FLAC index seeks, range padding and trim</td><td>Committed synthetic clip: sine plus white noise</td></tr>
+<tr><td>Golden parity</td><td>Our TS pipeline matches <code>onnxruntime</code> plus StemSplitio's numpy aggregator, tight tolerance</td><td>Fetched at test time, cached in CI</td></tr>
+<tr><td>Quality floor</td><td>SDR against ground truth, recorded so fp16 or chunking changes show up as numbers</td><td>MUSDB18 7 s previews (research terms, never committed), VoiceBank+DEMAND (CC BY 4.0)</td></tr>
+<tr><td>E2E</td><td>Import, process, play, export on the WASM provider in CI; WebGPU locally on a real GPU</td><td>Synthetic clip</td></tr>
+</table></div>
+
+<h2 id="milestones">Milestones</h2>
+<p>Each milestone is one PR. Work on the next one starts on a branch stacked on the previous, so review never blocks building.</p>
+<div class="tabs" id="ms">
+  <div class="tablist" role="tablist">
+    <button role="tab" aria-selected="true" aria-controls="m0" id="t-m0">M0</button>
+    <button role="tab" aria-selected="false" aria-controls="m1" id="t-m1">M1</button>
+    <button role="tab" aria-selected="false" aria-controls="m2" id="t-m2">M2</button>
+    <button role="tab" aria-selected="false" aria-controls="m3" id="t-m3">M3</button>
+    <button role="tab" aria-selected="false" aria-controls="m4" id="t-m4">M4</button>
+    <button role="tab" aria-selected="false" aria-controls="m5" id="t-m5">M5</button>
+  </div>
+  <div class="panel" role="tabpanel" id="m0" aria-labelledby="t-m0">
+    <h4>Repo, tooling, deploy, local spike</h4>
+    <p class="done">Done when the deployed URL reports <code>crossOriginIsolated === true</code> and desktop spike numbers are in <code>docs/spike-results.md</code>.</p>
+    <ul>
+      <li>Bun workspace, tsconfig, oxlint, oxfmt, Vitest, Playwright, prek hooks</li>
+      <li><code>cloudflare.config.ts</code> assets-only Worker with SPA fallback, COOP/COEP headers verified</li>
+      <li>GitHub Actions: lint, typecheck, test, headless WASM smoke, preview deploy per PR</li>
+      <li>Spike: DFN3 and Demucs vocals specialist (fp32) in a worker, 30 s clip in overlapping chunks</li>
+      <li>Spike reports provider used, <code>shader-f16</code>, load time, real-time factor, peak memory incl. GPU buffer sizes</li>
+      <li><code>CONTEXT.md</code> with the domain terms from this page</li>
+    </ul>
+  </div>
+  <div class="panel" role="tabpanel" id="m1" aria-labelledby="t-m1" hidden>
+    <h4>Import and view</h4>
+    <p class="done">Done when a one-hour file imports with flat memory, scrubs instantly, and the live view toggles between curves and waterfall.</p>
+    <ul>
+      <li>Decode worker: Mediabunny to PCM chunks to 16-bit FLAC plus frame index</li>
+      <li>Peaks pyramid and spectrogram tiles, custom canvas renderer</li>
+      <li>Reader worker, SAB ring buffer, AudioWorklet mixer, per-layer analysers</li>
+      <li>Project list with sizes and delete, <code>opfs-ownership.md</code></li>
+      <li>Screen layout chosen from the options artifact</li>
+    </ul>
+  </div>
+  <div class="panel" role="tabpanel" id="m2" aria-labelledby="t-m2" hidden>
+    <h4>Denoise</h4>
+    <p class="done">Done when DFN3 runs on a file or range, the removed layer is audible and visible, and the golden tests pass.</p>
+    <ul>
+      <li>Engine: chunking, overlap-add, range padding and edge crossfades (TDD)</li>
+      <li>Inference worker with <code>['webgpu', 'wasm']</code>, 48 kHz mono resampling</li>
+      <li>Op log, layers, mix, A/B, undo; residual layer</li>
+      <li>Removed-energy overlay on the static spectrogram</li>
+      <li><code>reference/</code> uv project and golden parity in Vitest under Node</li>
+    </ul>
+  </div>
+  <div class="panel" role="tabpanel" id="m3" aria-labelledby="t-m3" hidden>
+    <h4>Export and offline install</h4>
+    <p class="done">Done when the app installs, works in flight mode, and exports a one-hour mix to disk without a memory spike.</p>
+    <ul>
+      <li>Encode worker: WAV, FLAC, M4A, Opus; save picker on desktop, Web Share on Android</li>
+      <li>Hand-written service worker, precache manifest, update toast that waits for idle</li>
+      <li>Model library UI: sizes, SHA-256 check, <code>storage.persist()</code></li>
+    </ul>
+  </div>
+  <div class="panel" role="tabpanel" id="m4" aria-labelledby="t-m4" hidden>
+    <h4>Stems, fast path</h4>
+    <p class="done">Done when <code>htdemucs</code> produces four stems on desktop and, if the spike says go, on your phone, surviving a backgrounded tab.</p>
+    <ul>
+      <li>Phone spike run on the deployed <code>/spike/</code> page: the go/no-go</li>
+      <li>htdemucs 4-stem op at 44.1 kHz stereo</li>
+      <li>Chunk checkpoints, resume after suspend, Wake Lock, progress and ETA</li>
+      <li>Storage and time estimate before running</li>
+    </ul>
+  </div>
+  <div class="panel" role="tabpanel" id="m5" aria-labelledby="t-m5" hidden>
+    <h4>Stems, best quality (after v1)</h4>
+    <p class="done">Done when per-stem specialists beat htdemucs on the SDR floor and desktop can run the full ft bag.</p>
+    <ul>
+      <li>Specialists downloaded on demand, one model resident at a time</li>
+      <li>Pipelining: fetch the next model while the current one runs; batch chunks per session</li>
+      <li>Concurrency setting from <code>deviceMemory</code> and <code>hardwareConcurrency</code></li>
+      <li>Port of the ~250-line ft-bag aggregator, parity-tested</li>
+    </ul>
+  </div>
+</div>
+
+<h3 id="branches">Branch flow</h3>
+<div class="branches">
+  <div class="branch"><b>main</b><span>deployed; only merged milestones</span></div>
+  <div class="branch"><b>m0-foundation</b><span>PR into main, you review</span></div>
+  <div class="branch"><b>m1-import-view</b><span>stacked on m0, built while you review m0, rebased when m0 merges</span></div>
+  <div class="branch"><b>m2-denoise</b><span>stacked on m1, and so on</span></div>
+</div>
+
+<h2 id="risks">Risks and open questions</h2>
+<details open><summary>Does <code>cf</code> serve COOP/COEP?</summary><p>Undocumented. Fallback is a tiny Worker that stamps both headers, or Wrangler until <code>cf</code> is stable. Settled in M0.</p></details>
+<details><summary>WebGPU op coverage for HT-Demucs in ORT Web</summary><p>STFT, iSTFT and attention ops that fall back to CPU can erase the GPU gain. The spike logs which provider each node lands on.</p></details>
+<details><summary>Phone memory with fp32 specialists</summary><p>About 316 MB of weights plus activations. A crash means fp16 conversion and our own model repo move into M4.</p></details>
+<details><summary>Hugging Face under COEP require-corp</summary><p>Expected to pass as CORS fetches with <code>Access-Control-Allow-Origin: *</code>. If not, mirror to R2 behind a same-origin route.</p></details>
+<details><summary>Which phone?</summary><p>Model and Chrome version still needed for the spike report.</p></details>
+<details><summary>Can <code>bun build --compile</code> embed onnxruntime-node?</summary><p>Only matters for the CLI. Checked when that work starts.</p></details>
+<details><summary>Screen layout</summary><p>Waiting on the options artifact and your pick. Needed by M1.</p></details>
+
+<h2 id="later">Later</h2>
+<p>Spectral selection on the spectrogram. MP3 export. Export all stems as a zip. Project export and import between devices. The CLI. A Svelte 5 comparison on TS 5.x if UI performance becomes a problem. fp16 conversions in our own Hugging Face repo, then int8 only if SDR holds. WebNN for NPU access. Landscape phone layout.</p>
+
+</main>
+</div>
+</div>
+
+<script>
+(function () {
+  // Contents rail from h2s, with scroll-spy.
+  var toc = document.getElementById('toc');
+  var hs = Array.prototype.slice.call(document.querySelectorAll('main h2'));
+  hs.forEach(function (h) {
+    var a = document.createElement('a');
+    a.href = '#' + h.id; a.textContent = h.textContent; a.dataset.id = h.id;
+    toc.appendChild(a);
+  });
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        toc.querySelectorAll('a').forEach(function (a) { a.classList.toggle('on', a.dataset.id === e.target.id); });
+      });
+    }, { rootMargin: '0px 0px -70% 0px' });
+    hs.forEach(function (h) { io.observe(h); });
+  }
+
+  // Milestone tabs.
+  var tabs = document.querySelectorAll('#ms [role=tab]');
+  tabs.forEach(function (t, i) {
+    t.addEventListener('click', function () { select(t); });
+    t.addEventListener('keydown', function (e) {
+      var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      var n = tabs[(i + d + tabs.length) % tabs.length]; select(n); n.focus();
+    });
+  });
+  function select(t) {
+    tabs.forEach(function (o) {
+      var on = o === t;
+      o.setAttribute('aria-selected', on);
+      o.tabIndex = on ? 0 : -1;
+      document.getElementById(o.getAttribute('aria-controls')).hidden = !on;
+    });
+  }
+
+  // Procedural spectrogram strip: harmonics + broadband hiss, with the hiss band tinted as "removed".
+  var c = document.getElementById('strip');
+  function draw() {
+    var w = c.clientWidth, h = c.clientHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+    var ctx = c.getContext('2d'); ctx.scale(dpr, dpr);
+    var cs = getComputedStyle(document.documentElement);
+    var bg = cs.getPropertyValue('--code-bg').trim();
+    var inC = cs.getPropertyValue('--accent-2').trim();
+    var rmC = cs.getPropertyValue('--accent').trim();
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    var cols = Math.ceil(w / 3), rows = Math.ceil(h / 3);
+    var seed = 7; function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    for (var x = 0; x < cols; x++) {
+      var t = x / cols;
+      var f0 = 0.08 + 0.03 * Math.sin(t * 9) + 0.015 * Math.sin(t * 31);
+      var voiced = Math.sin(t * 14) > -0.3;
+      for (var y = 0; y < rows; y++) {
+        var fy = 1 - y / rows;
+        var harm = 0;
+        if (voiced) for (var k = 1; k < 9; k++) harm += Math.exp(-Math.pow((fy - f0 * k) * 90, 2)) / k;
+        var hiss = (fy > 0.45 && fy < 0.8) ? 0.35 * rnd() : 0.05 * rnd();
+        var hum = Math.exp(-Math.pow((fy - 0.02) * 120, 2)) * 0.6;
+        var removed = hiss + hum;
+        if (harm > 0.08) { ctx.globalAlpha = Math.min(1, harm * 1.4); ctx.fillStyle = inC; ctx.fillRect(x * 3, y * 3, 3, 3); }
+        if (removed > 0.12) { ctx.globalAlpha = Math.min(0.85, removed * 1.6); ctx.fillStyle = rmC; ctx.fillRect(x * 3, y * 3, 3, 3); }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  draw();
+  var rt; window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(draw, 150); });
+  if (window.matchMedia) { var mq = window.matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', draw); }
+  new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+})();
+</script>
