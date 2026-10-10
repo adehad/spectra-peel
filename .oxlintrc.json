@@ -1,0 +1,54 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "react",
+    "unicorn",
+    "oxc",
+    "react-perf",
+    "jsx-a11y",
+    "promise",
+    "import",
+    "vitest"
+  ],
+  "categories": { "correctness": "error", "suspicious": "warn", "perf": "warn" },
+  "ignorePatterns": ["**/dist/**", "**/.cloudflare/**", "reference/**"],
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "react-perf/jsx-no-new-function-as-prop": "off",
+    "typescript/await-thenable": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/no-unnecessary-condition": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/require-await": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/restrict-template-expressions": ["error", { "allowNumber": true }],
+    "typescript/return-await": "error",
+    "typescript/switch-exhaustiveness-check": "error"
+  },
+  "overrides": [
+    {
+      "files": ["packages/engine/**"],
+      "rules": {
+        "typescript/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["react", "react-dom", "@spectra-peel/web", "../../apps/*"],
+                "message": "The engine runs under Node for golden tests and in the CLI, so it cannot depend on the UI."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

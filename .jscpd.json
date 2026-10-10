@@ -1,0 +1,10 @@
+{
+  "path": ["apps", "packages", "e2e"],
+  "format": ["typescript", "tsx"],
+  "minLines": 5,
+  "minTokens": 50,
+  "threshold": 1,
+  "reporters": ["console"],
+  "gitignore": true,
+  "ignore": ["**/node_modules/**", "**/dist/**", "**/.cloudflare/**"]
+}
