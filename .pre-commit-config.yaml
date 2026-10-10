@@ -1,0 +1,26 @@
+repos:
+  - repo: local
+    hooks:
+      - id: oxfmt
+        name: oxfmt
+        entry: bunx oxfmt
+        language: system
+        types_or: [ts, tsx, javascript, json, markdown]
+      - id: oxlint
+        name: oxlint
+        entry: bunx oxlint --type-aware --deny-warnings
+        language: system
+        pass_filenames: false
+        types_or: [ts, tsx]
+      - id: typecheck
+        name: tsgo
+        entry: bun run typecheck
+        language: system
+        pass_filenames: false
+        types_or: [ts, tsx]
+      - id: vitest
+        name: vitest
+        entry: bunx vitest run
+        language: system
+        pass_filenames: false
+        types_or: [ts, tsx]
