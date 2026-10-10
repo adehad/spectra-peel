@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spectra Peel spike</title>
+    <style>
+      body {
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        margin: 1rem;
+        max-width: 48rem;
+      }
+      fieldset {
+        display: grid;
+        gap: 0.5rem;
+      }
+      pre {
+        background: #f2f2f5;
+        padding: 0.75rem;
+        overflow-x: auto;
+        font-size: 12px;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #111;
+          color: #eee;
+        }
+        pre {
+          background: #1d1d24;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Inference spike</h1>
+    <fieldset>
+      <label
+        >Model
+        <select id="model">
+          <option value="demucs-vocals-fp32">htdemucs_ft vocals, fp32 (316 MB)</option>
+          <option value="demucs-vocals-fp16">htdemucs_ft vocals, fp16 weights (166 MB)</option>
+          <option value="dfn3">DeepFilterNet3 graph only (8.6 MB)</option>
+        </select>
+      </label>
+      <label
+        >Execution provider
+        <select id="ep">
+          <option value="webgpu">webgpu</option>
+          <option value="wasm">wasm</option>
+        </select>
+      </label>
+      <label
+        >Local .onnx (optional, replaces the download) <input id="file" type="file" accept=".onnx"
+      /></label>
+      <label>Clip length (s) <input id="seconds" type="number" value="30" min="5" max="120" /></label>
+      <button id="run" type="button">Run</button>
+    </fieldset>
+    <p id="status">idle</p>
+    <pre id="out"></pre>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

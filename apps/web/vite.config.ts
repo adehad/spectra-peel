@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -13,5 +14,15 @@ export default defineConfig({
   plugins: [react(), cloudflare()],
   server: { headers: isolation },
   preview: { headers: isolation },
-  build: { target: "es2023" },
+  build: {
+    target: "es2023",
+    rollupOptions: {
+      input: {
+        main: resolve(import.meta.dirname, "index.html"),
+        spike: resolve(import.meta.dirname, "spike/index.html"),
+      },
+    },
+  },
+  worker: { format: "es" },
+  optimizeDeps: { exclude: ["onnxruntime-web"] },
 });

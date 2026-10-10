@@ -3,7 +3,7 @@
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable", "WebWorker.ImportScripts"],
     "jsx": "react-jsx",
-    "types": ["vite/client"]
+    "types": ["vite/client", "@webgpu/types", "node"]
   },
-  "include": ["src", "vite.config.ts", "cloudflare.config.ts"]
+  "include": ["src", "spike", "vite.config.ts", "cloudflare.config.ts"]
 }
