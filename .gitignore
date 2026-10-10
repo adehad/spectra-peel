@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.cloudflare/
+.wrangler/
+test-results/
+playwright-report/
+*.tsbuildinfo
