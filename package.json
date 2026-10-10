@@ -12,11 +12,14 @@
     "lint": "oxlint --type-aware --deny-warnings",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "typecheck": "tsgo -p packages/engine && tsgo -p apps/web",
+    "typecheck": "tsgo -p packages/engine && tsgo -p apps/web && tsgo -p e2e",
     "test": "vitest run",
-    "lint:dup": "jscpd"
+    "lint:dup": "jscpd",
+    "e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@types/node": "26.6.5",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "jscpd": "5.4.1",
     "oxfmt": "0.72.0",
