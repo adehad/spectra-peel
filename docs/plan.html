@@ -118,7 +118,7 @@ details > :not(summary) { margin-top: 0.6rem; }
 <tr><th>Scope</th><th>Milestones</th><th>Status</th></tr>
 <tr><td>v1</td><td>M0 to M4: repo and spike, import and view, denoise, export and offline install, fast stems</td><td><span class="pill ok">agreed</span></td></tr>
 <tr><td>v1.x</td><td>M5: per-stem specialists, pipelined model loading, desktop ft-bag</td><td><span class="pill muted">after v1</span></td></tr>
-<tr><td>Gate</td><td>M4 depends on getting HT-Demucs fast enough in ORT Web. The desktop spike says no as exported.</td><td><span class="pill block">at risk</span></td></tr>
+<tr><td>Gate</td><td>M4 depends on getting HT-Demucs fast enough in ORT Web. Simplified, it runs on desktop wasm at 1.55x real time; WebGPU is still 11x and unexplained.</td><td><span class="pill block">at risk</span></td></tr>
 </table></div>
 
 <h2 id="decisions">Decisions</h2>
@@ -314,7 +314,7 @@ flowchart LR
 
 <h2 id="risks">Risks and open questions</h2>
 <details open><summary>Does <code>cf</code> serve COOP/COEP?</summary><p>Undocumented. Fallback is a tiny Worker that stamps both headers, or Wrangler until <code>cf</code> is stable. Settled in M0.</p></details>
-<details open><summary>HT-Demucs in ORT Web: currently a no-go</summary><p>Desktop spike: the published exports fail to load (float64 in the iSTFT). Patched to float32 they load, but run about 9x slower than real time on an RTX-class GPU through WebGPU, and run out of the 4 GB wasm32 heap on wasm. Next lever is graph simplification with fixed shapes. If that fails, M4 needs a different model, a server option, or desktop-only stems. Details in <code>docs/spike-results.md</code>.</p></details>
+<details open><summary>HT-Demucs in ORT Web: runs, but slowly</summary><p>The published exports fail to load (float64 in the iSTFT). <code>reference/patch_float64.py</code> fixes that, and <code>reference/simplify.py</code> folds the graph to a fixed 7.8 s segment, from 24,917 nodes to 1,434. Simplified, desktop wasm runs a 30 s clip in 47 s (RTF 1.55) where it used to run out of memory. WebGPU still takes about 55 s per segment, so one or more kernels are pathological; the profiler returned nothing with the JSPI build. The Galaxy S25 is not measured yet. Next: find the slow WebGPU kernel. If it can't be fixed, stems become a slow background job, or M4 needs a different model. Details in <code>docs/spike-results.md</code>.</p></details>
 <details><summary>Phone memory with fp32 specialists</summary><p>About 316 MB of weights plus activations. A crash means fp16 conversion and our own model repo move into M4.</p></details>
 <details><summary>Hugging Face under COEP require-corp</summary><p>Resolved: the spike fetches DFN3 from Hugging Face on a cross-origin isolated page.</p></details>
 <details><summary>Which phone?</summary><p>Model and Chrome version still needed for the spike report.</p></details>
