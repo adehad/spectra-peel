@@ -47,17 +47,23 @@ def snr_db(reference: np.ndarray, test: np.ndarray) -> float:
     return float("inf") if noise == 0 else 10 * np.log10(float((reference**2).sum()) / noise)
 
 
+def vocals_check(src: str, dst: str) -> float:
+    x = (np.random.default_rng(0).standard_normal((1, 2, SEGMENT)) * 0.1).astype(np.float32)
+    before = np.asarray(
+        ort.InferenceSession(src, providers=["CPUExecutionProvider"]).run(None, {"mix": x})[0]
+    )
+    after = np.asarray(ort.InferenceSession(dst, providers=["CPUExecutionProvider"]).run(None, {"mix": x})[0])
+    snr = snr_db(before, after)
+    print(f"max abs diff {np.abs(before - after).max():.3e}, SNR {snr:.1f} dB")
+    return snr
+
+
 def main(src: str, dst: str) -> None:
     model = onnx.load(src)
     print("patched", patch(model))
     onnx.save(model, dst)
 
-    x = (np.random.default_rng(0).standard_normal((1, 2, SEGMENT)) * 0.1).astype(np.float32)
-    before = ort.InferenceSession(src, providers=["CPUExecutionProvider"]).run(None, {"mix": x})[0]
-    after = ort.InferenceSession(dst, providers=["CPUExecutionProvider"]).run(None, {"mix": x})[0]
-    snr = snr_db(before, after)
-    print(f"max abs diff {np.abs(before - after).max():.3e}, SNR {snr:.1f} dB")
-    if snr < 100:
+    if vocals_check(src, dst) < 100:
         sys.exit("patched model diverges from the original")
 
 

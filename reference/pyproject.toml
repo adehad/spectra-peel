@@ -2,7 +2,7 @@
 name = "spectra-peel-reference"
 version = "0.0.0"
 requires-python = ">=3.12"
-dependencies = ["numpy==2.5.4", "onnx==1.23.2", "onnxruntime==1.31.0"]
+dependencies = ["numpy==2.5.4", "onnx==1.23.2", "onnxruntime==1.31.0", "onnxsim==0.8.1"]
 
 [tool.uv]
 package = false
