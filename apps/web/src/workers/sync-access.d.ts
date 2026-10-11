@@ -13,6 +13,8 @@ interface FileSystemSyncAccessHandle {
 }
 
 interface FileSystemFileHandle {
+  /** Renames the file in place; Chrome 110 and later. */
+  move(newName: string): Promise<void>;
   /** "read-only" handles can coexist with each other; the default "readwrite" is exclusive. */
   createSyncAccessHandle(options?: {
     mode?: "readwrite" | "read-only" | "readwrite-unsafe";

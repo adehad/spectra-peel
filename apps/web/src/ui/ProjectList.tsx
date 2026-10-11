@@ -4,6 +4,7 @@ import type { Project } from "../project/schema";
 import { deleteProject, listProjects, type ProjectListing } from "../storage/opfs";
 import type { ImportMessage, ImportRequest } from "../workers/protocol";
 import { formatBytes, formatTime } from "./format";
+import { ModelsPanel } from "./ModelsPanel";
 
 interface Props {
   onOpen: (project: Project) => void;
@@ -15,6 +16,7 @@ export function ProjectList({ onOpen }: Props) {
   const [error, setError] = useState<string>();
   const [confirm, setConfirm] = useState<string>();
   const [storage, setStorage] = useState<StorageEstimate>();
+  const [models, setModels] = useState(false);
 
   const refresh = useCallback(() => {
     Promise.all([listProjects(), navigator.storage.estimate()]).then(
@@ -75,8 +77,17 @@ export function ProjectList({ onOpen }: Props) {
     <main className="mx-auto flex h-full max-w-2xl flex-col gap-4 px-4 py-6">
       <header className="flex items-baseline gap-3">
         <h1 className="text-xl font-semibold">Spectra Peel</h1>
-        <span className="text-sm text-dim">On-device audio cleanup and separation</span>
+        <span className="hidden text-sm text-dim sm:inline">On-device audio cleanup and separation</span>
+        <button
+          type="button"
+          onClick={() => setModels(true)}
+          className="ml-auto rounded bg-edge px-2 py-1 text-sm"
+          data-testid="models"
+        >
+          Models
+        </button>
       </header>
+      {models ? <ModelsPanel onClose={() => setModels(false)} /> : null}
 
       <label
         className={`flex cursor-pointer flex-col items-center gap-1 rounded-lg border border-dashed border-edge bg-panel px-4 py-8 text-center ${progress ? "pointer-events-none opacity-60" : "hover:border-accent"}`}

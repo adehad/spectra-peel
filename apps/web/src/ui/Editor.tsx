@@ -2,7 +2,6 @@ import { deserializePeaks, type PeaksPyramid } from "@spectra-peel/engine";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Player } from "../audio/player";
 import { useJobs } from "../jobs";
-import { MODELS } from "../models";
 import { applyDenoise, currentLayer, planDenoise, undoLast, type PlannedDenoise } from "../project/ops";
 import { SOURCE_LAYER, type Mix, type Project } from "../project/schema";
 import { paths, projectDir, readBytes, removeFile, writeProject } from "../storage/opfs";
@@ -217,7 +216,6 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
       op: plan.op,
       output: plan.output,
       removed: plan.removed,
-      modelUrl: MODELS["dfn3-stream"].url,
     };
     worker.postMessage(req);
   };
