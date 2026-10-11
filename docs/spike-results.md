@@ -70,3 +70,15 @@ GPU time for one chunk by kernel, rewritten model:
 ## Phone
 
 Not run yet. Target is a Samsung Galaxy S25 (Snapdragon 8 Elite, Adreno 830, 12 GB). Needs the deployed `/spike/` page and its Chrome version.
+
+## Import, desktop, 2026-10-11
+
+`SPECTRA_BENCH=1 SPECTRA_BENCH_MINUTES=60 bunx playwright test e2e/import-bench.spec.ts`: a synthetic one-hour, 44.1 kHz stereo WAV (635 MB), same machine as above.
+
+| Measure | Result |
+| --- | --- |
+| Import (decode, FLAC, peaks, spectrogram tiles) | 97 s |
+| Renderer resident memory during import | 175 MB at start, 259 MB at the end, sampled every 5 s |
+| Seek to a clicked point while playing | 41 to 214 ms until the clock moves |
+
+Resident memory grows by about 85 MB over the hour. About 10 MB of that is the peaks pyramid being built, which has to stay in memory until the import ends. The rest may be garbage V8 has not collected yet, or a real leak. RSS cannot tell them apart. Reading the worker's live heap over CDP failed, because Playwright's own session owns the worker target. A heap snapshot in a headed run is the next check. Writing spectrogram tiles without awaiting each write let them queue behind OPFS: memory reached 341 MB and the import took 119 s, so the import worker now writes tiles one at a time.
