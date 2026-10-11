@@ -5,7 +5,8 @@ function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b);
 }
 
-function besselI0(x: number): number {
+/** Zeroth-order modified Bessel function of the first kind, for Kaiser windows. */
+export function besselI0(x: number): number {
   let sum = 1;
   let term = 1;
   for (let k = 1; k < 50; k++) {
