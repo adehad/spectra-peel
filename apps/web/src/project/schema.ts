@@ -19,13 +19,13 @@ export const LayerSchema = z.object({
       index: z.string(),
       fallback: z.string().optional(),
     }),
-    z.object({ kind: z.literal("residual"), minuend: z.string(), subtrahend: z.string() }),
+    z.object({ kind: z.literal("residual"), minuend: z.string(), subtrahends: z.array(z.string()) }),
   ]),
 });
 
 export const OpSchema = z.object({
   id: z.string(),
-  kind: z.literal("denoise"),
+  kind: z.enum(["denoise", "separate"]),
   input: z.string(),
   /** The selection the user asked for, in source samples, before padding and crossfades. */
   range: z.object({ start: Samples, end: Samples }),

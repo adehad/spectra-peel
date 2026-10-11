@@ -100,7 +100,9 @@ export function LayersPanel({ project, colors, onMix, onUndo, busy }: Props) {
           <li key={op.id}>
             <div className="flex items-center gap-2 px-2 pt-1.5 text-xs text-dim">
               <span className="flex-1 truncate">
-                Denoise · {formatTime(op.range.start / rate)}–{formatTime(op.range.end / rate)}
+                {op.kind === "separate" ? "Stems" : "Denoise"} of{" "}
+                {project.layers.find((l) => l.id === op.input)?.label ?? "a removed layer"} ·{" "}
+                {formatTime(op.range.start / rate)}–{formatTime(op.range.end / rate)}
               </span>
               {op === last ? (
                 <button

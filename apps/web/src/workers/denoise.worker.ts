@@ -9,9 +9,10 @@ import {
 } from "@spectra-peel/engine";
 import * as ort from "onnxruntime-web/jspi";
 import { LayerBlocks } from "../audio/layer-blocks";
+import { dependencies } from "../project/layers";
 import { FADE_SECONDS } from "../project/ops";
-import type { Project } from "../project/schema";
 import { modelBytes } from "../storage/models";
+import { createSession } from "./ort-session";
 import { projectDir } from "../storage/opfs";
 import { LayerWriter, TileWriter, mono } from "./layer-writer";
 import type { DenoiseMessage, DenoiseRequest } from "./protocol";
@@ -133,20 +134,6 @@ class Queue {
   }
 }
 
-/** Layers the job must read: the input and everything it falls back to or subtracts. */
-function dependencies(project: Project, id: string, out = new Set<string>()): Set<string> {
-  const layer = project.layers.find((l) => l.id === id);
-  if (!layer || out.has(id)) return out;
-  out.add(id);
-  if (layer.data.kind === "flac" && layer.data.fallback !== undefined)
-    dependencies(project, layer.data.fallback, out);
-  if (layer.data.kind === "residual") {
-    dependencies(project, layer.data.minuend, out);
-    dependencies(project, layer.data.subtrahend, out);
-  }
-  return out;
-}
-
 async function denoise(req: DenoiseRequest): Promise<number> {
   const { project, op, output, removed } = req;
   const rate = project.source.sampleRate;
@@ -157,10 +144,8 @@ async function denoise(req: DenoiseRequest): Promise<number> {
   const fade = Math.round(FADE_SECONDS * rate);
 
   post({ type: "progress", fraction: 0, stage: "Loading model" });
-  ort.env.wasm.numThreads = Math.max(1, Math.min(navigator.hardwareConcurrency, 4));
-  const session = await ort.InferenceSession.create(await modelBytes("dfn3-stream"), {
-    executionProviders: ["wasm"],
-  });
+  // DeepFilterNet3 is small and recurrent; it ran 4x faster on wasm than WebGPU.
+  const { session } = await createSession(await modelBytes("dfn3-stream"), false);
 
   const dir = await projectDir(project.id);
   const blocks = await LayerBlocks.open(dir, project, dependencies(project, op.input));

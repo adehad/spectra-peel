@@ -1,7 +1,7 @@
 import { ENGINE_VERSION, layerExtent } from "@spectra-peel/engine";
 import { MODELS } from "../models";
 import { paths } from "../storage/opfs";
-import { SOURCE_LAYER, type Layer, type Op, type Project } from "./schema";
+import type { Layer, Op, Project } from "./schema";
 
 /** Crossfade at each selection edge between the input and the processed signal. */
 export const FADE_SECONDS = 0.015;
@@ -42,7 +42,7 @@ export function planDenoise(
     producedBy: id,
     start: extent.start,
     frames: extent.end - extent.start,
-    data: { kind: "residual", minuend: input, subtrahend: output.id },
+    data: { kind: "residual", minuend: input, subtrahends: [output.id] },
   };
   const model = MODELS["dfn3-stream"];
   const op: Op = {
@@ -58,17 +58,68 @@ export function planDenoise(
   return { op, output, removed };
 }
 
-/** Adds a finished op. The input goes quiet and the removed part starts muted, so the mix is the result. */
-export function applyDenoise(project: Project, { op, output, removed }: PlannedDenoise): Project {
-  const muted = new Set(project.mix.muted);
-  muted.add(op.input);
-  muted.add(removed.id);
+/** Adds a finished op's layers. Its input goes quiet, as do `muted` outputs, so the mix is the result. */
+export function applyOp(project: Project, op: Op, layers: Layer[], muted: string[]): Project {
+  const quiet = new Set([...project.mix.muted, op.input, ...muted]);
   return {
     ...project,
     ops: [...project.ops, op],
-    layers: [...project.layers, output, removed],
-    mix: { ...project.mix, muted: [...muted], solo: null },
+    layers: [...project.layers, ...layers],
+    mix: { ...project.mix, muted: [...quiet], solo: null },
   };
+}
+
+export function applyDenoise(project: Project, { op, output, removed }: PlannedDenoise): Project {
+  return applyOp(project, op, [output, removed], [removed.id]);
+}
+
+export const STEMS = ["Drums", "Bass", "Other", "Vocals"] as const;
+
+export interface PlannedSeparate {
+  op: Op;
+  stems: Layer[];
+  /** The input minus every stem: what the model left out. */
+  rest: Layer;
+}
+
+/** Four stems of `input` over the whole file, in HT-Demucs' source order. */
+export function planSeparate(project: Project, input: string): PlannedSeparate {
+  const id = shortId();
+  const frames = project.source.frames;
+  const stems: Layer[] = STEMS.map((label) => {
+    const layer = `${id}-${label.toLowerCase()}`;
+    return {
+      id: layer,
+      label,
+      producedBy: id,
+      start: 0,
+      frames,
+      data: { kind: "flac", path: paths.layerFlac(layer), index: paths.layerIndex(layer) },
+    };
+  });
+  const rest: Layer = {
+    id: `${id}-rest`,
+    label: "Rest",
+    producedBy: id,
+    start: 0,
+    frames,
+    data: { kind: "residual", minuend: input, subtrahends: stems.map((l) => l.id) },
+  };
+  const op: Op = {
+    id,
+    kind: "separate",
+    input,
+    range: { start: 0, end: frames },
+    model: { id: "htdemucs-stems", sha256: MODELS["htdemucs-stems"].sha256 },
+    engineVersion: ENGINE_VERSION,
+    outputs: [...stems.map((l) => l.id), rest.id],
+    createdAt: new Date().toISOString(),
+  };
+  return { op, stems, rest };
+}
+
+export function applySeparate(project: Project, { op, stems, rest }: PlannedSeparate): Project {
+  return applyOp(project, op, [...stems, rest], [rest.id]);
 }
 
 /** Removes the last op and its layers; returns the project and the files to delete. */
@@ -99,9 +150,4 @@ export function undoLast(project: Project): { project: Project; files: string[] 
     },
     files,
   };
-}
-
-/** The layer a new op should process: the newest FLAC layer, so ops chain. */
-export function currentLayer(project: Project): string {
-  return project.layers.findLast((l) => l.data.kind === "flac")?.id ?? SOURCE_LAYER;
 }

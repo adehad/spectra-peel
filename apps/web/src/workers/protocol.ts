@@ -54,3 +54,16 @@ export type ExportMessage =
   | { type: "progress"; fraction: number }
   | { type: "done"; path: string; bytes: number }
   | { type: "error"; message: string };
+
+export interface SeparateRequest {
+  project: Project;
+  op: Op;
+  /** FLAC layers in the model's source order, then the residual whose tiles to write. */
+  stems: Layer[];
+  rest: Layer;
+}
+
+export type SeparateMessage =
+  | { type: "progress"; fraction: number; stage: string; etaSeconds: number | null }
+  | { type: "done"; provider: string; realTimeFactor: number }
+  | { type: "error"; message: string };
