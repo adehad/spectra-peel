@@ -11,7 +11,11 @@
     "import",
     "vitest"
   ],
-  "categories": { "correctness": "error", "suspicious": "warn", "perf": "warn" },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
   "ignorePatterns": ["**/dist/**", "**/.cloudflare/**", "reference/**"],
   "rules": {
     "react/react-in-jsx-scope": "off",
@@ -31,13 +35,38 @@
     "typescript/only-throw-error": "error",
     "typescript/require-await": "error",
     "typescript/restrict-plus-operands": "error",
-    "typescript/restrict-template-expressions": ["error", { "allowNumber": true }],
+    "typescript/restrict-template-expressions": [
+      "error",
+      {
+        "allowNumber": true
+      }
+    ],
     "typescript/return-await": "error",
     "typescript/switch-exhaustiveness-check": "error"
   },
   "overrides": [
     {
       "files": ["packages/engine/**"],
+      "rules": {
+        "typescript/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["react", "react-dom", "@spectra-peel/web", "../../apps/*"],
+                "message": "The engine runs under Node for golden tests and in the CLI, so it cannot depend on the UI."
+              },
+              {
+                "group": ["node:*"],
+                "message": "Engine code also runs in the browser; only tests may use Node built-ins."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/engine/**/*.test.ts", "packages/engine/src/testing/**"],
       "rules": {
         "typescript/no-restricted-imports": [
           "error",
