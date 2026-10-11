@@ -26,3 +26,4 @@ export {
   type SpectrogramConfig,
   type SpectrogramTile,
 } from "./spectrogram";
+export { AudioRing } from "./ring";
