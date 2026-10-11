@@ -40,3 +40,4 @@ export {
   type Dfn3Model,
 } from "./dfn3";
 export { crossfadeWeight, layerExtent, paddedRange, type SampleRange } from "./ranges";
+export { Sha256 } from "./sha256";
