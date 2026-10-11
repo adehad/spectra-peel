@@ -118,7 +118,7 @@ details > :not(summary) { margin-top: 0.6rem; }
 <tr><th>Scope</th><th>Milestones</th><th>Status</th></tr>
 <tr><td>v1</td><td>M0 to M4: repo and spike, import and view, denoise, export and offline install, fast stems</td><td><span class="pill ok">agreed</span></td></tr>
 <tr><td>v1.x</td><td>M5: per-stem specialists, pipelined model loading, desktop ft-bag</td><td><span class="pill muted">after v1</span></td></tr>
-<tr><td>Gate</td><td>M4 depends on the phone spike result (go/no-go on mobile Demucs)</td><td><span class="pill warn">open</span></td></tr>
+<tr><td>Gate</td><td>M4 depends on getting HT-Demucs fast enough in ORT Web. The desktop spike says no as exported.</td><td><span class="pill block">at risk</span></td></tr>
 </table></div>
 
 <h2 id="decisions">Decisions</h2>
@@ -128,10 +128,10 @@ details > :not(summary) { margin-top: 0.6rem; }
 <tr><td>Repo</td><td><code>adehad/spectra-peel</code>, public, MIT. Commits as <code>adehad</code> with the GitHub noreply address, set locally.</td><td>All planned models are MIT or Apache-2.0. Keeps the work identity out of a personal repo.</td></tr>
 <tr><td>Hosting</td><td>Cloudflare Workers static assets, deployed with the new <code>cf</code> CLI and <code>cloudflare.config.ts</code>.</td><td><code>cf</code> is in open beta. Its config has no documented headers field, so M0 must prove COOP/COEP arrive (via <code>_headers</code>, else a 5-line Worker with <code>runWorkerFirst</code>).</td></tr>
 <tr><td>Runtime</td><td>Bun for install, scripts, tests. Node 22.18+ present for <code>cf</code> itself.</td><td><code>cf</code> does not support Bun as its runtime. Node 24.5 and Bun 1.4 are already installed.</td></tr>
-<tr><td>Models</td><td>Use StemSplitio's published fp32 ONNX files from Hugging Face, pinned by commit SHA. Our own fp16 repo is deferred.</td><td>No conversion work before we know the phone can run anything. fp32 is the worst case for memory, so a pass is conclusive.</td></tr>
+<tr><td>Models</td><td>Use StemSplitio's published ONNX files from Hugging Face, pinned by commit SHA. They already publish <code>*_fp16weights.onnx</code> (166 MB against 316 MB), so the spike measures both and our own model repo may never be needed.</td><td>No conversion work before we know the phone can run anything.</td></tr>
 <tr><td>Devices</td><td>Must work: your Android phone and desktop Chrome. Best effort: iOS Safari.</td><td>iOS WebGPU is new and its per-tab memory limit is tight for a 316 MB model.</td></tr>
-<tr><td>First feature</td><td>Denoise first, stems second.</td><td>DFN3 is about 8 MB and is not blocked by the spike, so it proves the whole pipeline.</td></tr>
-<tr><td>Spike</td><td>In-repo <code>spike/</code>, vanilla TS. Local Playwright on a real GPU first, phone later. Does not block app work.</td><td>Only M4 waits on the phone numbers.</td></tr>
+<tr><td>First feature</td><td>Denoise first, stems second.</td><td>DFN3 is about 8 MB and is not blocked by the spike. Its ONNX file is the neural graph only, so M2 also ports the DSP around it (see M2).</td></tr>
+<tr><td>Spike</td><td>A second page of the web app at <code>apps/web/spike/</code>, vanilla TS, so it ships with the real headers. Local Playwright on a real GPU first, phone later. Does not block app work.</td><td>Only M4 waits on the phone numbers.</td></tr>
 <tr><td>UI framework</td><td>React 19 and TypeScript 7 (<code>tsgo</code>), Vite. Svelte 5 comparison parked for later.</td><td>Matches the oxlint, tsgolint, oxfmt, Vitest and Playwright stack you already use. <code>svelte-check</code> needs the TS JS API that TS 7 lacks.</td></tr>
 <tr><td>Project</td><td>One source file per project. Operations form a tree of derived layers.</td><td>Multitrack (alignment, a mixer per track) is a different product.</td></tr>
 <tr><td>Selection</td><td>Time ranges only in v1, processed with about 3 s of context padding, crossfaded 10 to 20 ms at the edges. Spectral selection is v2.</td><td>Spectral edits are masks in the STFT domain, a different kind of operation.</td></tr>
@@ -141,7 +141,8 @@ details > :not(summary) { margin-top: 0.6rem; }
 <tr><td>Testing</td><td>Unit tests (TDD) for DSP, golden parity against a Python <code>onnxruntime</code> reference, SDR against MUSDB18 previews and VoiceBank+DEMAND.</td><td>Parity catches port bugs worth 0.5 dB that ground truth would hide.</td></tr>
 <tr><td>Export</td><td>Mix or a single layer, whole file or selection. WAV, FLAC, M4A, Opus. MP3 later via <code>@mediabunny/mp3-encoder</code>.</td><td>All stream to disk through Mediabunny.</td></tr>
 <tr><td>Storage</td><td>Layers as 16-bit FLAC (dithered) with a frame index in OPFS. <code>removed</code> computed live, never stored.</td><td>Roughly halves int16 size. FLAC decode costs a few percent of one core for five layers.</td></tr>
-<tr><td>Layout</td><td>Open. Options artifact in progress.</td><td>Stacked panels, Audacity lanes or a spectrogram lens, to be clicked through.</td></tr>
+<tr><td>Layout</td><td>Stacked panels. On a phone the layers sheet opens in place of the live spectrum panel and never covers the zoomed spectrogram, so gain, solo and mute changes preview live. Layers grouped under op headings with a small spectrogram per row. Overlay switch: removed energy, or tint by layer (max 3).</td><td>Picked from the <a href="https://claude.ai/artifact/Bmd3AohRdbHy9MH4dhhjyG">layout options</a>. The lens and op-tree ideas survive as the overlay switch and the grouping.</td></tr>
+<tr><td>ORT build</td><td><code>onnxruntime-web/jspi</code> (16.8 MB wasm) for WebGPU and WASM. Needs Chrome 137 or later.</td><td>The asyncify (26.8 MB) and JSEP (28.3 MB) builds are over the 25 MiB Workers per-file limit.</td></tr>
 <tr><td>Repo shape</td><td>Bun workspaces with <code>workspace:*</code>: <code>packages/engine</code>, <code>apps/web</code>, later <code>apps/cli</code>.</td><td>Engine talks to Storage and Inference interfaces, so the golden tests run under Node and a <code>bun build --compile</code> CLI is possible later.</td></tr>
 <tr><td>CI and deploy</td><td>GitHub Actions on every PR. <code>cf deploy</code> from <code>main</code>, a preview URL per PR. Cloudflare account <code>adehad</code>.</td><td>Hosted runners have no GPU, so real-GPU Playwright stays local.</td></tr>
 <tr><td>Updates</td><td>Hashed chunks, engine in its own chunk, ORT WASM pinned. No <code>skipWaiting</code> while a job runs. Each op records engine version and model SHA.</td><td>A 40 minute Demucs job must finish on the code that started it.</td></tr>
@@ -266,9 +267,10 @@ flowchart LR
     <ul>
       <li>Engine: chunking, overlap-add, range padding and edge crossfades (TDD)</li>
       <li>Inference worker with <code>['webgpu', 'wasm']</code>, 48 kHz mono resampling</li>
+      <li>DFN3 DSP in TS: 960-point STFT with Vorbis window, 32-band ERB features, running normalisation, order-5 deep filter, ERB mask, overlap-add synthesis (contract in the model card)</li>
       <li>Op log, layers, mix, A/B, undo; residual layer</li>
       <li>Removed-energy overlay on the static spectrogram</li>
-      <li><code>reference/</code> uv project and golden parity in Vitest under Node</li>
+      <li><code>reference/</code> uv project and golden parity in Vitest under Node; DFN3 parity against the official <code>deepfilternet</code> 0.5.6 package</li>
     </ul>
   </div>
   <div class="panel" role="tabpanel" id="m3" aria-labelledby="t-m3" hidden>
@@ -312,12 +314,11 @@ flowchart LR
 
 <h2 id="risks">Risks and open questions</h2>
 <details open><summary>Does <code>cf</code> serve COOP/COEP?</summary><p>Undocumented. Fallback is a tiny Worker that stamps both headers, or Wrangler until <code>cf</code> is stable. Settled in M0.</p></details>
-<details><summary>WebGPU op coverage for HT-Demucs in ORT Web</summary><p>STFT, iSTFT and attention ops that fall back to CPU can erase the GPU gain. The spike logs which provider each node lands on.</p></details>
+<details open><summary>HT-Demucs in ORT Web: currently a no-go</summary><p>Desktop spike: the published exports fail to load (float64 in the iSTFT). Patched to float32 they load, but run about 9x slower than real time on an RTX-class GPU through WebGPU, and run out of the 4 GB wasm32 heap on wasm. Next lever is graph simplification with fixed shapes. If that fails, M4 needs a different model, a server option, or desktop-only stems. Details in <code>docs/spike-results.md</code>.</p></details>
 <details><summary>Phone memory with fp32 specialists</summary><p>About 316 MB of weights plus activations. A crash means fp16 conversion and our own model repo move into M4.</p></details>
-<details><summary>Hugging Face under COEP require-corp</summary><p>Expected to pass as CORS fetches with <code>Access-Control-Allow-Origin: *</code>. If not, mirror to R2 behind a same-origin route.</p></details>
+<details><summary>Hugging Face under COEP require-corp</summary><p>Resolved: the spike fetches DFN3 from Hugging Face on a cross-origin isolated page.</p></details>
 <details><summary>Which phone?</summary><p>Model and Chrome version still needed for the spike report.</p></details>
 <details><summary>Can <code>bun build --compile</code> embed onnxruntime-node?</summary><p>Only matters for the CLI. Checked when that work starts.</p></details>
-<details><summary>Screen layout</summary><p>Waiting on the options artifact and your pick. Needed by M1.</p></details>
 
 <h2 id="later">Later</h2>
 <p>Spectral selection on the spectrogram. MP3 export. Export all stems as a zip. Project export and import between devices. The CLI. A Svelte 5 comparison on TS 5.x if UI performance becomes a problem. fp16 conversions in our own Hugging Face repo, then int8 only if SDR holds. WebNN for NPU access. Landscape phone layout.</p>
