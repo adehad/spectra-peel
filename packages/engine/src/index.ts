@@ -27,3 +27,4 @@ export {
   type SpectrogramTile,
 } from "./spectrogram";
 export { AudioRing } from "./ring";
+export { Resampler } from "./resample";
