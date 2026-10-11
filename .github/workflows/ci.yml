@@ -18,6 +18,8 @@ jobs:
         with:
           bun-version: 1.4.0
       - run: bun install --frozen-lockfile
+      # ffmpeg cross-checks the engine's FLAC output; the test skips without it.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: bun run fmt:check
       - run: bun run lint
       - run: bun run typecheck
@@ -35,8 +37,9 @@ jobs:
         with:
           node-version: 22
       - run: bun install --frozen-lockfile
-      # Hosted runners have no GPU; the smoke test only exercises the wasm provider.
-      - run: bunx playwright test e2e/smoke.spec.ts
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # Hosted runners have no GPU; every spec runs on the wasm provider, and the benches skip.
+      - run: bunx playwright test
         env:
           CI: "1"
       - uses: actions/upload-artifact@v4
