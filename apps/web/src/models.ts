@@ -29,8 +29,8 @@ export const MODELS: Record<ModelId, ModelSpec> = {
     // reference/patch_float64.py, simplify.py and rewrite_stft.py applied to StemSplitio/htdemucs-onnx
     // htdemucs_fp16weights.onnx at d54ed9eb60e258ea82131c6ee14578628816456a. Not hosted yet: add it from a file.
     url: null,
-    sha256: "",
-    bytes: 0,
+    sha256: "04823dc557b0e458fe49ec84da2b6af991159216d6753c9a203315745032aa55",
+    bytes: 345_402_157,
     bundled: false,
     license: "MIT",
   },

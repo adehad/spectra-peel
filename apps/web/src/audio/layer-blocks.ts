@@ -34,7 +34,7 @@ class FlacFile {
 
 /**
  * Every layer's audio, one 4096-sample block at a time, resolving extents: inside its extent a FLAC layer
- * plays its own file and a residual layer is minuend minus subtrahend; outside, a FLAC layer plays its
+ * plays its own file and a residual layer is the minuend minus its subtrahends; outside, a FLAC layer plays its
  * fallback and a residual layer is silent. Decoded blocks are cached for the current block index only.
  */
 export class LayerBlocks {
@@ -108,9 +108,15 @@ export class LayerBlocks {
     const inside = sample >= layer.start && sample < layer.start + layer.frames;
     if (layer.data.kind === "residual") {
       if (!inside) return silence();
-      const a = this.block(layer.data.minuend, block);
-      const b = this.block(layer.data.subtrahend, block);
-      return a.map((plane, c) => plane.map((v, i) => v - (b[c]?.[i] ?? 0)));
+      const out = this.block(layer.data.minuend, block).map((plane) => plane.slice());
+      for (const id of layer.data.subtrahends) {
+        const sub = this.block(id, block);
+        for (const [c, plane] of out.entries()) {
+          const s = sub[c];
+          if (s) for (let i = 0; i < plane.length; i++) plane[i] = (plane[i] ?? 0) - (s[i] ?? 0);
+        }
+      }
+      return out;
     }
     if (!inside)
       return layer.data.fallback === undefined ? silence() : this.block(layer.data.fallback, block);

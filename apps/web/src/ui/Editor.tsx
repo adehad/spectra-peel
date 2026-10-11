@@ -2,10 +2,13 @@ import { deserializePeaks, type PeaksPyramid } from "@spectra-peel/engine";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Player } from "../audio/player";
 import { useJobs } from "../jobs";
-import { applyDenoise, currentLayer, planDenoise, undoLast, type PlannedDenoise } from "../project/ops";
-import { SOURCE_LAYER, type Mix, type Project } from "../project/schema";
+import { applyDenoise, applySeparate, planDenoise, planSeparate, undoLast } from "../project/ops";
+import { SOURCE_LAYER, type Layer, type Mix, type Project } from "../project/schema";
 import { paths, projectDir, readBytes, removeFile, writeProject } from "../storage/opfs";
-import type { DenoiseMessage, DenoiseRequest } from "../workers/protocol";
+import { modelStatus } from "../storage/models";
+import type { DenoiseRequest, SeparateRequest } from "../workers/protocol";
+import { ModelsPanel } from "./ModelsPanel";
+import { StemsConfirm } from "./StemsConfirm";
 import { ExportPanel } from "./ExportPanel";
 import { formatTime } from "./format";
 import { LayersPanel } from "./LayersPanel";
@@ -20,23 +23,39 @@ const PALETTE: Record<string, string> = {
   Source: "oklch(0.78 0.1 230)",
   Denoised: "oklch(0.8 0.14 150)",
   Removed: "oklch(0.75 0.15 40)",
+  Drums: "oklch(0.72 0.17 25)",
+  Bass: "oklch(0.7 0.15 290)",
+  Other: "oklch(0.82 0.12 95)",
+  Vocals: "oklch(0.8 0.13 180)",
+  Rest: "oklch(0.6 0.03 270)",
 };
 
 interface Job {
-  plan: PlannedDenoise;
+  id: string;
+  files: string[];
   worker: Worker;
   fraction: number;
   stage: string;
+  etaSeconds: number | null;
+  wakeLock: WakeLockSentinel | null;
 }
+
+type JobMessage =
+  | { type: "progress"; fraction: number; stage: string; etaSeconds?: number | null }
+  | { type: "done" }
+  | { type: "error"; message: string };
 
 async function deleteFiles(dir: FileSystemDirectoryHandle, files: string[]): Promise<void> {
   for (const f of files) await removeFile(dir, f);
 }
 
-function planFiles(plan: PlannedDenoise): string[] {
-  const { output, removed } = plan;
-  const flac = output.data.kind === "flac" ? [output.data.path, output.data.index] : [];
-  return [...flac, paths.peaks(output.id), `derived/tiles/${output.id}`, `derived/tiles/${removed.id}`];
+/** Every file an op's layers may have written, for cleaning up after a failed or cancelled job. */
+function layerFiles(layers: readonly Layer[]): string[] {
+  return layers.flatMap((l) => [
+    ...(l.data.kind === "flac" ? [l.data.path, l.data.index] : []),
+    paths.peaks(l.id),
+    `derived/tiles/${l.id}`,
+  ]);
 }
 
 export function Editor({ project: initial, onClose }: { project: Project; onClose: () => void }) {
@@ -127,6 +146,8 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   const [notice, setNotice] = useState<string>();
   const [selectMode, setSelectMode] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [stemsAsk, setStemsAsk] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
   const lastOp = project.ops.at(-1);
   const [base, setBase] = useState(lastOp?.outputs[0] ?? SOURCE_LAYER);
   const [showRemoved, setShowRemoved] = useState(true);
@@ -175,31 +196,49 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     }
   };
 
-  const startDenoise = () => {
-    const sel = useView.getState().selection;
-    const range = sel
-      ? { start: Math.round(sel.start * rate), end: Math.round(sel.end * rate) }
-      : { start: 0, end: project.source.frames };
-    const plan = planDenoise(project, currentLayer(project), range);
-    const worker = new Worker(new URL("../workers/denoise.worker.ts", import.meta.url), { type: "module" });
+  /** Runs an op in a worker, keeps the screen awake, and adds its layers when it finishes. */
+  const runJob = (
+    id: string,
+    layers: Layer[],
+    worker: Worker,
+    request: DenoiseRequest | SeparateRequest,
+    finish: (p: Project) => Project,
+  ) => {
     setNotice(undefined);
-    setJob({ plan, worker, fraction: 0, stage: "Starting" });
-    useJobs.getState().start(plan.op.id);
-    worker.addEventListener("message", (e: MessageEvent<DenoiseMessage>) => {
+    const files = layerFiles(layers);
+    setJob({ id, files, worker, fraction: 0, stage: "Starting", etaSeconds: null, wakeLock: null });
+    useJobs.getState().start(id);
+    ("wakeLock" in navigator
+      ? navigator.wakeLock.request("screen")
+      : Promise.reject(new Error("no wake lock"))
+    ).then(
+      (wakeLock) => {
+        setJob((j) => (j?.id === id ? { ...j, wakeLock } : j));
+        return undefined;
+      },
+      () => undefined,
+    );
+    worker.addEventListener("message", (e: MessageEvent<JobMessage>) => {
       const m = e.data;
       if (m.type === "progress") {
-        setJob((j) => (j ? { ...j, fraction: m.fraction, stage: m.stage } : j));
+        setJob((j) =>
+          j ? { ...j, fraction: m.fraction, stage: m.stage, etaSeconds: m.etaSeconds ?? null } : j,
+        );
         return;
       }
       worker.terminate();
-      useJobs.getState().end(plan.op.id);
+      useJobs.getState().end(id);
+      setJob((j) => {
+        void j?.wakeLock?.release();
+        return j;
+      });
       if (m.type === "error") {
         setJob(undefined);
-        setNotice(`Denoise failed: ${m.message}`);
-        void deleteFiles(dir, planFiles(plan));
+        setNotice(`Failed: ${m.message}`);
+        void deleteFiles(dir, files);
         return;
       }
-      const next = applyDenoise(project, plan);
+      const next = finish(project);
       void (async () => {
         try {
           await writeProject(dir, next);
@@ -211,22 +250,47 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         setJob(undefined);
       })();
     });
-    const req: DenoiseRequest = {
-      project,
-      op: plan.op,
-      output: plan.output,
-      removed: plan.removed,
-    };
-    worker.postMessage(req);
+    worker.postMessage(request);
+  };
+
+  const startDenoise = () => {
+    const sel = useView.getState().selection;
+    const range = sel
+      ? { start: Math.round(sel.start * rate), end: Math.round(sel.end * rate) }
+      : { start: 0, end: project.source.frames };
+    const plan = planDenoise(project, base, range);
+    const worker = new Worker(new URL("../workers/denoise.worker.ts", import.meta.url), { type: "module" });
+    const req: DenoiseRequest = { project, op: plan.op, output: plan.output, removed: plan.removed };
+    runJob(plan.op.id, [plan.output, plan.removed], worker, req, (p) => applyDenoise(p, plan));
+  };
+
+  const askStems = () => {
+    modelStatus("htdemucs-stems").then(
+      (s) => {
+        if (s.ready) setStemsAsk(true);
+        else setModelsOpen(true);
+        return undefined;
+      },
+      (e: unknown) => setNotice(String(e)),
+    );
+  };
+
+  const startStems = () => {
+    setStemsAsk(false);
+    const plan = planSeparate(project, base);
+    const worker = new Worker(new URL("../workers/separate.worker.ts", import.meta.url), { type: "module" });
+    const req: SeparateRequest = { project, op: plan.op, stems: plan.stems, rest: plan.rest };
+    runJob(plan.op.id, [...plan.stems, plan.rest], worker, req, (p) => applySeparate(p, plan));
   };
 
   const cancelJob = () => {
     if (!job) return;
     job.worker.terminate();
-    useJobs.getState().end(job.plan.op.id);
+    void job.wakeLock?.release();
+    useJobs.getState().end(job.id);
     setJob(undefined);
     // Terminating releases the worker's handles shortly after, not synchronously.
-    setTimeout(() => void deleteFiles(dir, planFiles(job.plan)).catch(() => undefined), 500);
+    setTimeout(() => void deleteFiles(dir, job.files).catch(() => undefined), 500);
   };
 
   const undo = () => {
@@ -303,7 +367,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
             onClick={() => setShowRemoved(!showRemoved)}
             className="rounded px-2 py-0.5 text-dim aria-pressed:bg-cyan-400/25 aria-pressed:text-cyan-100"
           >
-            Removed energy
+            {removedLayer.label} energy
           </button>
         ) : null}
         <span className="ml-auto font-mono text-dim tabular-nums">
@@ -325,6 +389,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           >
             <span>
               {job.stage}… {Math.round(job.fraction * 100)}%
+              {job.etaSeconds === null ? "" : ` · about ${formatTime(job.etaSeconds)} left`}
             </span>
             <progress value={job.fraction} className="h-1 flex-1 accent-accent" />
             <button type="button" onClick={cancelJob} className="text-dim hover:text-zinc-100">
@@ -405,6 +470,15 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         </button>
         <button
           type="button"
+          disabled={job !== undefined}
+          onClick={askStems}
+          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40"
+          data-testid="stems"
+        >
+          Stems
+        </button>
+        <button
+          type="button"
           onClick={() => setExporting(true)}
           className="rounded bg-edge px-3 py-1 text-sm"
           data-testid="export"
@@ -438,6 +512,15 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           +
         </button>
       </footer>
+      {stemsAsk ? (
+        <StemsConfirm
+          project={project}
+          input={project.layers.find((l) => l.id === base)?.label ?? "Source"}
+          onRun={startStems}
+          onClose={() => setStemsAsk(false)}
+        />
+      ) : null}
+      {modelsOpen ? <ModelsPanel onClose={() => setModelsOpen(false)} /> : null}
       {exporting ? (
         <ExportPanel project={project} dir={dir} selection={selection} onClose={() => setExporting(false)} />
       ) : null}
