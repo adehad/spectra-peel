@@ -2,13 +2,14 @@ import { deserializePeaks, type PeaksPyramid } from "@spectra-peel/engine";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Player } from "../audio/player";
 import { useJobs } from "../jobs";
+import { FAST_STEMS, SPECIALISTS } from "../models";
 import { applyDenoise, applySeparate, planDenoise, planSeparate, undoLast } from "../project/ops";
 import { SOURCE_LAYER, layerGains, type Layer, type Mix, type Op, type Project } from "../project/schema";
 import { paths, projectDir, readBytes, removeFile, writeProject } from "../storage/opfs";
 import { modelStatus } from "../storage/models";
 import type { DenoiseRequest, SeparateRequest } from "../workers/protocol";
 import { ModelsPanel } from "./ModelsPanel";
-import { StemsConfirm } from "./StemsConfirm";
+import { StemsConfirm, type StemsReady } from "./StemsConfirm";
 import { ExportPanel } from "./ExportPanel";
 import { formatTime } from "./format";
 import { LayersPanel } from "./LayersPanel";
@@ -179,7 +180,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   const [notice, setNotice] = useState<string>();
   const [selectMode, setSelectMode] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [stemsAsk, setStemsAsk] = useState(false);
+  const [stemsReady, setStemsReady] = useState<StemsReady | null>(null);
   const [modelsOpen, setModelsOpen] = useState(false);
   const lastOp = project.ops.at(-1);
   // Stems read best over the mix they came from; a denoise over its result, tinted by what it removed.
@@ -309,9 +310,10 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   };
 
   const askStems = () => {
-    modelStatus("htdemucs-stems").then(
-      (s) => {
-        if (s.ready) setStemsAsk(true);
+    Promise.all([FAST_STEMS, ...SPECIALISTS].map((id) => modelStatus(id))).then(
+      ([fast, ...specialists]) => {
+        const ready = { fast: fast?.ready ?? false, specialists: specialists.map((s) => s.ready) };
+        if (ready.fast || ready.specialists.every(Boolean)) setStemsReady(ready);
         else setModelsOpen(true);
         return undefined;
       },
@@ -319,11 +321,18 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     );
   };
 
-  const startStems = (useGpu: boolean) => {
-    setStemsAsk(false);
-    const plan = planSeparate(project, base);
+  const startStems = (best: number[], useGpu: boolean) => {
+    setStemsReady(null);
+    const plan = planSeparate(project, base, best);
     const worker = new Worker(new URL("../workers/separate.worker.ts", import.meta.url), { type: "module" });
-    const req: SeparateRequest = { project, op: plan.op, stems: plan.stems, rest: plan.rest, useGpu };
+    const req: SeparateRequest = {
+      project,
+      op: plan.op,
+      stems: plan.stems,
+      rest: plan.rest,
+      best,
+      useGpu,
+    };
     runJob(plan.op.id, [...plan.stems, plan.rest], worker, req, (p) => applySeparate(p, plan));
   };
 
@@ -552,12 +561,17 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           +
         </button>
       </footer>
-      {stemsAsk ? (
+      {stemsReady ? (
         <StemsConfirm
           project={project}
           input={project.layers.find((l) => l.id === base)?.label ?? "Source"}
+          ready={stemsReady}
           onRun={startStems}
-          onClose={() => setStemsAsk(false)}
+          onOpenModels={() => {
+            setStemsReady(null);
+            setModelsOpen(true);
+          }}
+          onClose={() => setStemsReady(null)}
         />
       ) : null}
       {modelsOpen ? <ModelsPanel onClose={() => setModelsOpen(false)} /> : null}

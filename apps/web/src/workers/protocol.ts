@@ -71,6 +71,8 @@ export interface SeparateRequest {
   /** FLAC layers in the model's source order, then the residual whose tiles to write. */
   stems: Layer[];
   rest: Layer;
+  /** Stems, by index, to take from their fine-tuned specialists instead of the fast model. */
+  best: number[];
   useGpu: boolean;
 }
 
