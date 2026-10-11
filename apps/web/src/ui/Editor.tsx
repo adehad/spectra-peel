@@ -1,6 +1,7 @@
 import { deserializePeaks, type PeaksPyramid } from "@spectra-peel/engine";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Player } from "../audio/player";
+import { useJobs } from "../jobs";
 import { MODELS } from "../models";
 import { applyDenoise, currentLayer, planDenoise, undoLast, type PlannedDenoise } from "../project/ops";
 import { SOURCE_LAYER, type Mix, type Project } from "../project/schema";
@@ -184,6 +185,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     const worker = new Worker(new URL("../workers/denoise.worker.ts", import.meta.url), { type: "module" });
     setNotice(undefined);
     setJob({ plan, worker, fraction: 0, stage: "Starting" });
+    useJobs.getState().start(plan.op.id);
     worker.addEventListener("message", (e: MessageEvent<DenoiseMessage>) => {
       const m = e.data;
       if (m.type === "progress") {
@@ -191,6 +193,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         return;
       }
       worker.terminate();
+      useJobs.getState().end(plan.op.id);
       if (m.type === "error") {
         setJob(undefined);
         setNotice(`Denoise failed: ${m.message}`);
@@ -222,6 +225,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   const cancelJob = () => {
     if (!job) return;
     job.worker.terminate();
+    useJobs.getState().end(job.plan.op.id);
     setJob(undefined);
     // Terminating releases the worker's handles shortly after, not synchronously.
     setTimeout(() => void deleteFiles(dir, planFiles(job.plan)).catch(() => undefined), 500);

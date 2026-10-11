@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Project } from "./project/schema";
 import { Editor } from "./ui/Editor";
 import { ProjectList } from "./ui/ProjectList";
+import { UpdatePrompt } from "./ui/UpdatePrompt";
 
 export function App() {
   const [open, setOpen] = useState<Project>();
@@ -13,9 +14,14 @@ export function App() {
       </p>
     );
   }
-  return open ? (
-    <Editor key={open.id} project={open} onClose={() => setOpen(undefined)} />
-  ) : (
-    <ProjectList onOpen={setOpen} />
+  return (
+    <>
+      {open ? (
+        <Editor key={open.id} project={open} onClose={() => setOpen(undefined)} />
+      ) : (
+        <ProjectList onOpen={setOpen} />
+      )}
+      <UpdatePrompt />
+    </>
   );
 }
