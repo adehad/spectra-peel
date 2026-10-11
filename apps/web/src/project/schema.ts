@@ -23,13 +23,16 @@ export const LayerSchema = z.object({
   ]),
 });
 
+const ModelRef = z.object({ id: z.string(), sha256: z.string() });
+
 export const OpSchema = z.object({
   id: z.string(),
   kind: z.enum(["denoise", "separate"]),
   input: z.string(),
   /** The selection the user asked for, in source samples, before padding and crossfades. */
   range: z.object({ start: Samples, end: Samples }),
-  model: z.object({ id: z.string(), sha256: z.string() }),
+  /** The model it ran, or the models it ran in turn. */
+  model: ModelRef.or(z.array(ModelRef)),
   engineVersion: z.string(),
   outputs: z.array(z.string()),
   createdAt: z.string(),

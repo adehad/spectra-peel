@@ -14,7 +14,7 @@ Work in progress.
 4. Mix layers with gain, mute and solo. **Hear input** flips to the untouched source for comparison. **Removed energy** tints what a denoise took out, and **Stem colours** paints each stem in its slider's colour. Moving a gain slider highlights that layer alone, and the spectrogram dims where a cut takes energy out of the mix.
 5. **Export** what you hear as WAV, FLAC, M4A or Opus, optionally normalised to a loudness target (BS.1770 LUFS, peaks capped at -1 dBTP). Lossy exports default to the source's bitrate.
 
-Stems need the HT-Demucs model (345 MB), which is not hosted yet: build it with the scripts in `reference/` and add it under **Models**.
+Stems need the HT-Demucs model (345 MB), which is not hosted yet: build it with the scripts in `reference/` and add it under **Models**. Any stem can instead come from its htdemucs_ft fine-tuned model (345 MB each, built the same way): tick it under **Best quality**, and each ticked stem adds one more pass over the file.
 
 Built for desktop Chrome or Edge 137 or later and Chrome on Android, which have the WebAssembly JSPI support this build of ONNX Runtime needs. Firefox and Safari are untested.
 

@@ -1,5 +1,5 @@
 import { ENGINE_VERSION, layerExtent } from "@spectra-peel/engine";
-import { MODELS } from "../models";
+import { MODELS, stemModels } from "../models";
 import { paths } from "../storage/opfs";
 import type { Layer, Op, Project } from "./schema";
 
@@ -82,8 +82,11 @@ export interface PlannedSeparate {
   rest: Layer;
 }
 
-/** Four stems of `input` over the whole file, in HT-Demucs' source order. */
-export function planSeparate(project: Project, input: string): PlannedSeparate {
+/**
+ * Four stems of `input` over the whole file, in HT-Demucs' source order. `best` lists the stems to take
+ * from their fine-tuned specialists; the rest come from the fast model.
+ */
+export function planSeparate(project: Project, input: string, best: readonly number[]): PlannedSeparate {
   const id = shortId();
   const frames = project.source.frames;
   const stems: Layer[] = STEMS.map((label) => {
@@ -110,7 +113,7 @@ export function planSeparate(project: Project, input: string): PlannedSeparate {
     kind: "separate",
     input,
     range: { start: 0, end: frames },
-    model: { id: "htdemucs-stems", sha256: MODELS["htdemucs-stems"].sha256 },
+    model: stemModels(best).map((m) => ({ id: m, sha256: MODELS[m].sha256 })),
     engineVersion: ENGINE_VERSION,
     outputs: [...stems.map((l) => l.id), rest.id],
     createdAt: new Date().toISOString(),

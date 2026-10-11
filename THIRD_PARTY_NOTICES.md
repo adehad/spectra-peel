@@ -18,6 +18,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 The stems model is HT-Demucs by Simon Rouard, Francisco Massa and Alexandre Défossez (https://github.com/facebookresearch/demucs), as exported to ONNX at https://huggingface.co/StemSplitio/htdemucs-onnx (revision `d54ed9eb60e258ea82131c6ee14578628816456a`). `reference/patch_float64.py`, `simplify.py` and `rewrite_stft.py` change the graph so ONNX Runtime Web can run it; the weights are unchanged. Not distributed with the app.
 
+The best-quality models are the four htdemucs_ft fine-tuned models from the same authors, as exported at https://huggingface.co/StemSplitio/htdemucs-ft-drums-onnx (revision `55f929d333054c69ae0e829b15e8f8826a39d6eb`), `htdemucs-ft-bass-onnx` (`410457f134bf91cb3ecb74abf1a897882d26afa8`), `htdemucs-ft-other-onnx` (`db6d606b4a6ee0b34f3fb09a6be4d23b07811318`) and `htdemucs-ft-vocals-onnx` (`2ef0d757d3e226d0da85fb8c71514f464fcabdd0`), changed by the same scripts. Not distributed with the app.
+
 MIT License
 
 Copyright (c) Meta Platforms, Inc. and affiliates.
