@@ -1,0 +1,12 @@
+{
+  "samples": 72000,
+  "frames": 152,
+  "shapes": {
+    "input": [72000],
+    "feat_erb": [152, 32],
+    "feat_spec": [152, 96, 2],
+    "erb_mask": [152, 32],
+    "df_coefs": [5, 152, 96, 2],
+    "output": [72000]
+  }
+}
