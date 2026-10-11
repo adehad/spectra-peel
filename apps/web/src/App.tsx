@@ -1,17 +1,21 @@
-import { ENGINE_VERSION } from "@spectra-peel/engine";
+import { useState } from "react";
+import type { Project } from "./project/schema";
+import { Editor } from "./ui/Editor";
+import { ProjectList } from "./ui/ProjectList";
 
 export function App() {
-  return (
-    <main>
-      <h1>Spectra Peel</h1>
-      <dl>
-        <dt>Cross-origin isolated</dt>
-        <dd data-testid="isolated">{String(globalThis.crossOriginIsolated)}</dd>
-        <dt>WebGPU</dt>
-        <dd data-testid="webgpu">{String("gpu" in navigator)}</dd>
-        <dt>Engine</dt>
-        <dd>{ENGINE_VERSION}</dd>
-      </dl>
-    </main>
+  const [open, setOpen] = useState<Project>();
+  if (!globalThis.crossOriginIsolated) {
+    return (
+      <p className="p-4 text-red-300" data-testid="isolated">
+        This page is not cross-origin isolated, so audio playback cannot start. Reload, or check the server
+        headers.
+      </p>
+    );
+  }
+  return open ? (
+    <Editor key={open.id} project={open} onClose={() => setOpen(undefined)} />
+  ) : (
+    <ProjectList onOpen={setOpen} />
   );
 }
