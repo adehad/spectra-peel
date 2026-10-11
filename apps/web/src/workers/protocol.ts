@@ -39,3 +39,19 @@ export type DenoiseMessage =
   | { type: "progress"; fraction: number; stage: string }
   | { type: "done"; realTimeFactor: number }
   | { type: "error"; message: string };
+
+export type ExportFormat = "wav" | "flac" | "m4a" | "opus";
+
+export interface ExportRequest {
+  project: Project;
+  format: ExportFormat;
+  /** Source samples. */
+  range: { start: number; end: number };
+  fileName: string;
+}
+
+export type ExportMessage =
+  | { type: "formats"; formats: ExportFormat[] }
+  | { type: "progress"; fraction: number }
+  | { type: "done"; path: string; bytes: number }
+  | { type: "error"; message: string };

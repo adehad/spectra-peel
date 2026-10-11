@@ -1,0 +1,237 @@
+import { useEffect, useState } from "react";
+import type { Project } from "../project/schema";
+import { fileAt } from "../storage/opfs";
+import type { ExportFormat, ExportMessage, ExportRequest } from "../workers/protocol";
+import { formatBytes, formatTime } from "./format";
+
+const LABELS: Record<ExportFormat, string> = {
+  wav: "WAV · 24-bit",
+  flac: "FLAC · lossless 16-bit",
+  m4a: "M4A · AAC",
+  opus: "Opus · Ogg",
+};
+
+interface Props {
+  project: Project;
+  dir: FileSystemDirectoryHandle;
+  /** Seconds, or null for the whole file. */
+  selection: { start: number; end: number } | null;
+  onClose: () => void;
+}
+
+function newWorker(): Worker {
+  return new Worker(new URL("../workers/export.worker.ts", import.meta.url), { type: "module" });
+}
+
+interface SaveFilePickerWindow {
+  showSaveFilePicker?: (options: { suggestedName: string }) => Promise<FileSystemFileHandle>;
+}
+
+/** Streams the export out of OPFS into a file the user picks, so it never sits in memory. */
+async function saveAs(file: File, name: string): Promise<boolean> {
+  const picker = (window as Window & SaveFilePickerWindow).showSaveFilePicker;
+  if (!picker) return false;
+  try {
+    const handle = await picker({ suggestedName: name });
+    await file.stream().pipeTo(await handle.createWritable());
+    return true;
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return false;
+    throw e;
+  }
+}
+
+function download(file: File, name: string): void {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function canShare(file: File): boolean {
+  return "canShare" in navigator && navigator.canShare({ files: [file] });
+}
+
+/** Exports what you hear: the current mix of audible layers at their gains. */
+export function ExportPanel({ project, dir, selection, onClose }: Props) {
+  const [formats, setFormats] = useState<ExportFormat[]>(["wav", "flac"]);
+  const [format, setFormat] = useState<ExportFormat>("flac");
+  const [scope, setScope] = useState<"all" | "selection">(selection ? "selection" : "all");
+  const [progress, setProgress] = useState<number>();
+  const [result, setResult] = useState<{ file: File; label: string }>();
+  const [error, setError] = useState<string>();
+  const rate = project.source.sampleRate;
+
+  useEffect(() => {
+    const worker = newWorker();
+    worker.addEventListener("message", (e: MessageEvent<ExportMessage>) => {
+      if (e.data.type === "formats") setFormats(e.data.formats);
+      worker.terminate();
+    });
+    worker.postMessage({ type: "probe", project });
+    return () => worker.terminate();
+  }, [project]);
+
+  const range =
+    scope === "selection" && selection
+      ? { start: Math.round(selection.start * rate), end: Math.round(selection.end * rate) }
+      : { start: 0, end: project.source.frames };
+  const suffix = project.ops.length > 0 ? "-peeled" : "";
+  const fileName = `${project.name}${suffix}.${format}`;
+
+  const start = () => {
+    setError(undefined);
+    setResult(undefined);
+    setProgress(0);
+    const worker = newWorker();
+    worker.addEventListener("message", (e: MessageEvent<ExportMessage>) => {
+      const m = e.data;
+      if (m.type === "progress") {
+        setProgress(m.fraction);
+        return;
+      }
+      worker.terminate();
+      setProgress(undefined);
+      if (m.type === "error") setError(m.message);
+      else if (m.type === "done") {
+        fileAt(dir, m.path)
+          .then((h) => h.getFile())
+          .then((f) => {
+            setResult({
+              file: new File([f], fileName, { type: f.type }),
+              label: `${fileName} · ${formatBytes(m.bytes)}`,
+            });
+            return undefined;
+          })
+          .catch((err: unknown) => setError(String(err)));
+      }
+    });
+    const req: ExportRequest = { project, format, range, fileName };
+    worker.postMessage(req);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-10 grid place-items-end bg-black/50 sm:place-items-center"
+      role="presentation"
+    >
+      <dialog
+        open
+        aria-label="Export"
+        className="static m-0 w-full max-w-md rounded-t-xl text-zinc-100 border border-edge bg-panel p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-xl"
+      >
+        <h2 className="mb-3 font-medium">Export the mix</h2>
+        <fieldset className="mb-3 flex flex-col gap-1.5 text-sm">
+          {(["wav", "flac", "m4a", "opus"] as const).map((f) => (
+            <label key={f} className={`flex items-center gap-2 ${formats.includes(f) ? "" : "opacity-40"}`}>
+              <input
+                type="radio"
+                name="format"
+                value={f}
+                checked={format === f}
+                disabled={!formats.includes(f)}
+                onChange={() => setFormat(f)}
+                className="accent-accent"
+              />
+              {LABELS[f]}
+              {formats.includes(f) ? null : (
+                <span className="text-xs text-dim">not supported in this browser</span>
+              )}
+            </label>
+          ))}
+        </fieldset>
+        <fieldset className="mb-3 flex gap-4 text-sm">
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              checked={scope === "all"}
+              onChange={() => setScope("all")}
+              className="accent-accent"
+            />
+            Whole file
+          </label>
+          <label className={`flex items-center gap-2 ${selection ? "" : "opacity-40"}`}>
+            <input
+              type="radio"
+              checked={scope === "selection"}
+              disabled={!selection}
+              onChange={() => setScope("selection")}
+              className="accent-accent"
+            />
+            Selection
+            {selection ? (
+              <span className="font-mono text-xs text-dim">
+                {formatTime(selection.start)}–{formatTime(selection.end)}
+              </span>
+            ) : null}
+          </label>
+        </fieldset>
+        <p className="mb-3 text-xs text-dim">
+          Exports the layers you can hear at their current gains.{" "}
+          {project.mix.ab === "input" ? "Hear input is on, so this is the untouched source." : ""}
+        </p>
+        {progress === undefined ? null : (
+          <progress value={progress} className="mb-3 h-1.5 w-full accent-accent" />
+        )}
+        {result ? (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm" data-testid="export-result">
+            <span className="mr-auto">{result.label}</span>
+            {"showSaveFilePicker" in window ? (
+              <button
+                type="button"
+                className="rounded bg-edge px-2 py-1"
+                onClick={() => {
+                  saveAs(result.file, result.file.name).catch((err: unknown) => setError(String(err)));
+                }}
+              >
+                Save as…
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="rounded bg-edge px-2 py-1"
+              onClick={() => download(result.file, result.file.name)}
+              data-testid="export-download"
+            >
+              Download
+            </button>
+            {canShare(result.file) ? (
+              <button
+                type="button"
+                className="rounded bg-edge px-2 py-1"
+                onClick={() => {
+                  navigator.share({ files: [result.file], title: result.file.name }).catch((err: unknown) => {
+                    if (!(err instanceof DOMException && err.name === "AbortError")) setError(String(err));
+                  });
+                }}
+              >
+                Share
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {error ? (
+          <p role="alert" className="mb-3 text-sm text-red-200">
+            {error}
+          </p>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm text-dim">
+            Close
+          </button>
+          <button
+            type="button"
+            disabled={progress !== undefined}
+            onClick={start}
+            className="rounded bg-accent px-3 py-1.5 text-sm text-ink disabled:opacity-40"
+            data-testid="export-start"
+          >
+            Export {format.toUpperCase()}
+          </button>
+        </div>
+      </dialog>
+    </div>
+  );
+}

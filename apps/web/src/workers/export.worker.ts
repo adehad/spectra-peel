@@ -1,0 +1,226 @@
+import {
+  FLAC_BLOCK,
+  FLAC_HEADER_BYTES,
+  FlacWriter,
+  Resampler,
+  Xorshift32,
+  quantize16,
+} from "@spectra-peel/engine";
+import {
+  AudioSample,
+  AudioSampleSource,
+  Mp4OutputFormat,
+  OggOutputFormat,
+  Output,
+  QUALITY_HIGH,
+  StreamTarget,
+  canEncodeAudio,
+  type StreamTargetChunk,
+} from "mediabunny";
+import { LayerBlocks } from "../audio/layer-blocks";
+import { layerGains, type Project } from "../project/schema";
+import { fileAt, projectDir } from "../storage/opfs";
+import type { ExportFormat, ExportMessage, ExportRequest } from "./protocol";
+
+const post = (m: ExportMessage) => postMessage(m);
+const OPUS_RATE = 48_000;
+
+interface Sink {
+  write(planes: readonly Float32Array[]): Promise<void>;
+  finish(): Promise<void>;
+}
+
+function wavHeader(frames: number, channels: number, rate: number): Uint8Array<ArrayBuffer> {
+  const bytes = frames * channels * 3;
+  const h = new DataView(new ArrayBuffer(44));
+  const text = (at: number, s: string) => {
+    for (let i = 0; i < s.length; i++) h.setUint8(at + i, s.charCodeAt(i));
+  };
+  text(0, "RIFF");
+  h.setUint32(4, 36 + bytes, true);
+  text(8, "WAVEfmt ");
+  h.setUint32(16, 16, true);
+  h.setUint16(20, 1, true);
+  h.setUint16(22, channels, true);
+  h.setUint32(24, rate, true);
+  h.setUint32(28, rate * channels * 3, true);
+  h.setUint16(32, channels * 3, true);
+  h.setUint16(34, 24, true);
+  text(36, "data");
+  h.setUint32(40, bytes, true);
+  return new Uint8Array(h.buffer);
+}
+
+/** 24-bit PCM: the mix is float, and 24 bits keep gain changes below the 16-bit layers' own noise floor. */
+function wavSink(w: FileSystemWritableFileStream, frames: number, channels: number, rate: number): Sink {
+  let at = 0;
+  return {
+    async write(planes) {
+      if (at === 0) {
+        await w.write({ type: "write", position: 0, data: wavHeader(frames, channels, rate) });
+        at = 44;
+      }
+      const n = planes[0]?.length ?? 0;
+      const out = new Uint8Array(n * channels * 3);
+      let o = 0;
+      for (let i = 0; i < n; i++) {
+        for (let c = 0; c < channels; c++) {
+          const v = Math.max(-8_388_608, Math.min(8_388_607, Math.round((planes[c]?.[i] ?? 0) * 8_388_607)));
+          out[o++] = v & 0xff;
+          out[o++] = (v >> 8) & 0xff;
+          out[o++] = (v >> 16) & 0xff;
+        }
+      }
+      await w.write({ type: "write", position: at, data: out });
+      at += out.length;
+    },
+    async finish() {
+      await w.close();
+    },
+  };
+}
+
+function flacSink(w: FileSystemWritableFileStream, channels: 1 | 2, rate: number): Sink {
+  const writer = new FlacWriter({ sampleRate: rate, channels });
+  const rng = new Xorshift32(7);
+  let at = FLAC_HEADER_BYTES;
+  const put = async (frames: Uint8Array<ArrayBuffer>[]) => {
+    for (const f of frames) {
+      await w.write({ type: "write", position: at, data: f });
+      at += f.length;
+    }
+  };
+  return {
+    async write(planes) {
+      await put(writer.push(planes.map((p) => quantize16(p, rng))));
+    },
+    async finish() {
+      await put(writer.finish());
+      await w.write({ type: "write", position: 0, data: writer.header() });
+      await w.close();
+    },
+  };
+}
+
+/** AAC in MP4 or Opus in Ogg through WebCodecs. Opus only runs at 48 kHz, so it resamples first. */
+async function encodedSink(
+  w: FileSystemWritableFileStream,
+  format: "m4a" | "opus",
+  channels: number,
+  rate: number,
+): Promise<Sink> {
+  const codec = format === "m4a" ? "aac" : "opus";
+  const outRate = format === "opus" ? OPUS_RATE : rate;
+  const writable = new WritableStream<StreamTargetChunk>({
+    write: (chunk) => w.write({ type: "write", position: chunk.position, data: chunk.data }),
+  });
+  const output = new Output({
+    format: format === "m4a" ? new Mp4OutputFormat() : new OggOutputFormat(),
+    target: new StreamTarget(writable),
+  });
+  const source = new AudioSampleSource({ codec, quality: QUALITY_HIGH });
+  output.addAudioTrack(source);
+  await output.start();
+  const resamplers =
+    outRate === rate ? null : Array.from({ length: channels }, () => new Resampler(rate, outRate));
+  let written = 0;
+  const add = async (planes: readonly Float32Array[]) => {
+    const n = planes[0]?.length ?? 0;
+    if (n === 0) return;
+    const data = new Float32Array(n * channels);
+    for (let c = 0; c < channels; c++) data.set(planes[c]?.subarray(0, n) ?? new Float32Array(n), c * n);
+    const sample = new AudioSample({
+      data,
+      format: "f32-planar",
+      numberOfChannels: channels,
+      sampleRate: outRate,
+      timestamp: written / outRate,
+    });
+    written += n;
+    await source.add(sample);
+    sample.close();
+  };
+  return {
+    async write(planes) {
+      await add(resamplers ? planes.map((p, c) => resamplers[c]?.push(p) ?? p) : planes);
+    },
+    async finish() {
+      if (resamplers) await add(resamplers.map((r) => r.finish()));
+      await output.finalize();
+      await w.close();
+    },
+  };
+}
+
+async function exportMix(req: ExportRequest): Promise<{ path: string; bytes: number }> {
+  const { project, format, range } = req;
+  const rate = project.source.sampleRate;
+  const channels = project.source.channels;
+  const dir = await projectDir(project.id);
+  const path = `exports/${req.fileName}`;
+  const handle = await fileAt(dir, path, true);
+  const w = await handle.createWritable();
+  await w.truncate(0);
+  const frames = range.end - range.start;
+  const sink =
+    format === "wav"
+      ? wavSink(w, frames, channels, rate)
+      : format === "flac"
+        ? flacSink(w, channels, rate)
+        : await encodedSink(w, format, channels, rate);
+
+  const gains = [...layerGains(project)].filter(([, g]) => g > 0);
+  const blocks = await LayerBlocks.open(dir, project);
+  try {
+    const first = Math.floor(range.start / FLAC_BLOCK);
+    const last = Math.ceil(range.end / FLAC_BLOCK);
+    for (let k = first; k < last; k++) {
+      const base = k * FLAC_BLOCK;
+      const from = Math.max(0, range.start - base);
+      const to = Math.min(blocks.blockLength(k), range.end - base);
+      const mix = Array.from({ length: channels }, () => new Float32Array(to - from));
+      for (const [id, g] of gains) {
+        const planes = blocks.block(id, k);
+        for (let c = 0; c < channels; c++) {
+          const src = planes[c];
+          const dst = mix[c];
+          if (!src || !dst) continue;
+          for (let i = 0; i < dst.length; i++) dst[i] = (dst[i] ?? 0) + g * (src[from + i] ?? 0);
+        }
+      }
+      await sink.write(mix);
+      if (k % 32 === 0) post({ type: "progress", fraction: (k - first) / Math.max(1, last - first) });
+    }
+    await sink.finish();
+  } catch (e) {
+    await w.abort().catch(() => undefined);
+    throw e;
+  } finally {
+    blocks.close();
+  }
+  return { path, bytes: (await handle.getFile()).size };
+}
+
+async function probe(project: Project): Promise<ExportFormat[]> {
+  const options = { numberOfChannels: project.source.channels, sampleRate: project.source.sampleRate };
+  const out: ExportFormat[] = ["wav", "flac"];
+  if (await canEncodeAudio("aac", { ...options, quality: QUALITY_HIGH })) out.push("m4a");
+  if (await canEncodeAudio("opus", { ...options, sampleRate: OPUS_RATE, quality: QUALITY_HIGH }))
+    out.push("opus");
+  return out;
+}
+
+addEventListener("message", (e: MessageEvent<{ type: "probe"; project: Project } | ExportRequest>) => {
+  const req = e.data;
+  if ("type" in req) {
+    probe(req.project).then(
+      (formats) => post({ type: "formats", formats }),
+      (err: unknown) => post({ type: "error", message: String(err) }),
+    );
+    return;
+  }
+  exportMix(req).then(
+    (r) => post({ type: "done", ...r }),
+    (err: unknown) => post({ type: "error", message: err instanceof Error ? err.message : String(err) }),
+  );
+});
