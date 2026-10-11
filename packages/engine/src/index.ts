@@ -28,3 +28,14 @@ export {
 } from "./spectrogram";
 export { AudioRing } from "./ring";
 export { Resampler } from "./resample";
+export { MixedFFT } from "./fft";
+export {
+  DFN3,
+  Dfn3Analysis,
+  Dfn3Stream,
+  Dfn3Synthesis,
+  applyDfn3,
+  erbWidths,
+  vorbisWindow,
+  type Dfn3Model,
+} from "./dfn3";

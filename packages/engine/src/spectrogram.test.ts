@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FFT } from "./fft";
+import { FFT, MixedFFT } from "./fft";
 import { SPECTROGRAM, SpectrogramBuilder, bandEdges, type SpectrogramTile } from "./spectrogram";
 
 describe("FFT", () => {
@@ -23,6 +23,32 @@ describe("FFT", () => {
 
   it("rejects sizes that are not powers of two", () => {
     expect(() => new FFT(1000)).toThrow(RangeError);
+  });
+});
+
+describe("MixedFFT", () => {
+  it.each([960, 12, 30, 45])("matches a direct DFT at size %i", (n) => {
+    const re = Float64Array.from({ length: n }, (_, i) => Math.sin(i * 0.37) + (i % 7) * 0.1);
+    const im = Float64Array.from({ length: n }, (_, i) => Math.cos(i * 0.11) * 0.5);
+    const outRe = new Float64Array(n);
+    const outIm = new Float64Array(n);
+    new MixedFFT(n).transform(re, im, outRe, outIm);
+    let worst = 0;
+    for (let k = 0; k < n; k++) {
+      let dr = 0;
+      let di = 0;
+      for (let t = 0; t < n; t++) {
+        const a = (-2 * Math.PI * k * t) / n;
+        dr += (re[t] ?? 0) * Math.cos(a) - (im[t] ?? 0) * Math.sin(a);
+        di += (re[t] ?? 0) * Math.sin(a) + (im[t] ?? 0) * Math.cos(a);
+      }
+      worst = Math.max(worst, Math.abs((outRe[k] ?? 0) - dr), Math.abs((outIm[k] ?? 0) - di));
+    }
+    expect(worst).toBeLessThan(1e-9);
+  });
+
+  it("rejects sizes with a prime factor above 5", () => {
+    expect(() => new MixedFFT(14)).toThrow(RangeError);
   });
 });
 
