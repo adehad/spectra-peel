@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useJobs } from "../jobs";
 import type { Project } from "../project/schema";
 import { fileAt } from "../storage/opfs";
 import type { ExportFormat, ExportMessage, ExportRequest } from "../workers/protocol";
@@ -85,6 +86,8 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
     setError(undefined);
     setResult(undefined);
     setProgress(0);
+    const job = `export-${Date.now()}`;
+    useJobs.getState().start(job);
     const worker = newWorker();
     worker.addEventListener("message", (e: MessageEvent<ExportMessage>) => {
       const m = e.data;
@@ -93,6 +96,7 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
         return;
       }
       worker.terminate();
+      useJobs.getState().end(job);
       setProgress(undefined);
       if (m.type === "error") setError(m.message);
       else if (m.type === "done") {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useJobs } from "../jobs";
 import type { Project } from "../project/schema";
 import { deleteProject, listProjects, type ProjectListing } from "../storage/opfs";
 import type { ImportMessage, ImportRequest } from "../workers/protocol";
@@ -34,11 +35,13 @@ export function ProjectList({ onOpen }: Props) {
     const id = crypto.randomUUID();
     const worker = new Worker(new URL("../workers/import.worker.ts", import.meta.url), { type: "module" });
     setProgress({ id, name, fraction: 0 });
+    useJobs.getState().start(id);
     worker.addEventListener("message", (e: MessageEvent<ImportMessage>) => {
       const m = e.data;
       if (m.type === "progress") setProgress({ id, name, fraction: m.fraction });
       else {
         worker.terminate();
+        useJobs.getState().end(id);
         setProgress(undefined);
         if (m.type === "done") onOpen(m.project);
         else {
