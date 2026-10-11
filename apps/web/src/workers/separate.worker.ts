@@ -43,18 +43,18 @@ const take = (parts: Float32Array[], n: number) => {
   return out;
 };
 
-async function separate(req: SeparateRequest): Promise<{ provider: string; realTimeFactor: number }> {
+async function separate(req: SeparateRequest): Promise<{ device: string; realTimeFactor: number }> {
   const { project, op, stems, rest } = req;
   const rate = project.source.sampleRate;
   const channels = project.source.channels;
   const total = project.source.frames;
 
   post({ type: "progress", fraction: 0, stage: "Loading model", etaSeconds: null });
-  const { session, provider } = await createSession(await modelBytes("htdemucs-stems"), true);
+  const { session, device } = await createSession(await modelBytes("htdemucs-stems"), req.useGpu);
   post({
     type: "progress",
     fraction: 0,
-    stage: `Separating on ${provider === "webgpu" ? "the GPU" : "the CPU"}`,
+    stage: `Separating on the ${device}`,
     etaSeconds: null,
   });
 
@@ -114,7 +114,7 @@ async function separate(req: SeparateRequest): Promise<{ provider: string; realT
     post({
       type: "progress",
       fraction,
-      stage: `Separating on ${provider === "webgpu" ? "the GPU" : "the CPU"}`,
+      stage: `Separating on the ${device}`,
       etaSeconds: fraction > 0.02 ? (elapsed / fraction) * (1 - fraction) : null,
     });
   };
@@ -144,7 +144,7 @@ async function separate(req: SeparateRequest): Promise<{ provider: string; realT
   }
   for (const w of writers) await w.finish();
   await restTiles.finish();
-  return { provider, realTimeFactor: (performance.now() - t0) / 1000 / (total / rate) };
+  return { device, realTimeFactor: (performance.now() - t0) / 1000 / (total / rate) };
 }
 
 addEventListener("message", (e: MessageEvent<SeparateRequest>) => {

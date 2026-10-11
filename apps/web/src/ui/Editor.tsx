@@ -275,11 +275,11 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     );
   };
 
-  const startStems = () => {
+  const startStems = (useGpu: boolean) => {
     setStemsAsk(false);
     const plan = planSeparate(project, base);
     const worker = new Worker(new URL("../workers/separate.worker.ts", import.meta.url), { type: "module" });
-    const req: SeparateRequest = { project, op: plan.op, stems: plan.stems, rest: plan.rest };
+    const req: SeparateRequest = { project, op: plan.op, stems: plan.stems, rest: plan.rest, useGpu };
     runJob(plan.op.id, [...plan.stems, plan.rest], worker, req, (p) => applySeparate(p, plan));
   };
 

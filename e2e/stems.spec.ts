@@ -24,8 +24,14 @@ test("adds the stems model from a file and separates a clip into four stems", as
   await expect(page.getByTestId("project-name")).toHaveText("song", { timeout: 60_000 });
   await page.getByTestId("stems").click();
   const t0 = Date.now();
+  await expect(page.getByTestId("stems-run")).toBeEnabled();
+  console.log(
+    "run on:",
+    await page.getByRole("dialog", { name: "Separate stems" }).locator("dd").nth(1).innerText(),
+  );
   await page.getByTestId("stems-run").click();
-  await expect(page.getByTestId("job")).toBeVisible();
+  await expect(page.getByTestId("job")).toContainText("Separating on", { timeout: 120_000 });
+  console.log("job:", await page.getByTestId("job").innerText());
   await expect(page.getByTestId("job")).toBeHidden({ timeout: 14 * 60_000 });
   const wall = (Date.now() - t0) / 1000;
   console.log(JSON.stringify({ seconds, wall, realTimeFactor: wall / seconds }));
