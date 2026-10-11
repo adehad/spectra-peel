@@ -12,6 +12,21 @@ const LABELS: Record<ExportFormat, string> = {
   opus: "Opus · Ogg",
 };
 
+const LOSSY = new Set(["aac", "opus", "mp3", "vorbis"]);
+
+/**
+ * The source's own bitrate when it was lossy, since re-encoding above it only grows the file; otherwise a
+ * transparent rate for the format and channel count.
+ */
+function defaultKbps(project: Project, format: ExportFormat, supported: readonly number[]): number {
+  const { codec, bitrate, channels } = project.source;
+  let want: number;
+  if (codec !== undefined && bitrate !== undefined && LOSSY.has(codec)) want = bitrate / 1000;
+  else if (format === "opus") want = channels === 1 ? 64 : 128;
+  else want = channels === 1 ? 96 : 192;
+  return supported.find((k) => k >= want * 0.95) ?? supported.at(-1) ?? want;
+}
+
 interface Props {
   project: Project;
   dir: FileSystemDirectoryHandle;
@@ -58,8 +73,10 @@ function canShare(file: File): boolean {
 /** Exports what you hear: the current mix of audible layers at their gains. */
 export function ExportPanel({ project, dir, selection, onClose }: Props) {
   const [formats, setFormats] = useState<ExportFormat[]>(["wav", "flac"]);
+  const [supportedKbps, setSupportedKbps] = useState<Partial<Record<ExportFormat, number[]>>>({});
   const [format, setFormat] = useState<ExportFormat>("flac");
   const [scope, setScope] = useState<"all" | "selection">(selection ? "selection" : "all");
+  const [kbps, setKbps] = useState<number>();
   const [progress, setProgress] = useState<number>();
   const [result, setResult] = useState<{ file: File; label: string }>();
   const [error, setError] = useState<string>();
@@ -68,13 +85,19 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
   useEffect(() => {
     const worker = newWorker();
     worker.addEventListener("message", (e: MessageEvent<ExportMessage>) => {
-      if (e.data.type === "formats") setFormats(e.data.formats);
+      if (e.data.type === "formats") {
+        setFormats(e.data.formats);
+        setSupportedKbps(e.data.kbps);
+      }
       worker.terminate();
     });
     worker.postMessage({ type: "probe", project });
     return () => worker.terminate();
   }, [project]);
 
+  const kbpsOptions = supportedKbps[format] ?? [];
+  const chosenKbps =
+    kbps !== undefined && kbpsOptions.includes(kbps) ? kbps : defaultKbps(project, format, kbpsOptions);
   const range =
     scope === "selection" && selection
       ? { start: Math.round(selection.start * rate), end: Math.round(selection.end * rate) }
@@ -112,7 +135,13 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
           .catch((err: unknown) => setError(String(err)));
       }
     });
-    const req: ExportRequest = { project, format, range, fileName };
+    const req: ExportRequest = {
+      project,
+      format,
+      range,
+      fileName,
+      bitrate: chosenKbps * 1000,
+    };
     worker.postMessage(req);
   };
 
@@ -146,6 +175,29 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
             </label>
           ))}
         </fieldset>
+        {format === "m4a" || format === "opus" ? (
+          <label className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+            Bitrate
+            <select
+              value={chosenKbps}
+              onChange={(e) => setKbps(Number(e.target.value))}
+              className="rounded bg-edge px-1 py-0.5"
+              data-testid="export-bitrate"
+            >
+              {kbpsOptions.map((k) => (
+                <option key={k} value={k}>
+                  {k} kbps
+                </option>
+              ))}
+            </select>
+            {project.source.bitrate !== undefined && project.source.codec !== undefined ? (
+              <span className="text-xs text-dim">
+                Source: {project.source.codec.toUpperCase()} {Math.round(project.source.bitrate / 1000)} kbps.
+                Going higher only makes the file bigger.
+              </span>
+            ) : null}
+          </label>
+        ) : null}
         <fieldset className="mb-3 flex gap-4 text-sm">
           <label className="flex items-center gap-2">
             <input

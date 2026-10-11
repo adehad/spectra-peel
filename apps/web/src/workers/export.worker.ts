@@ -12,7 +12,7 @@ import {
   Mp4OutputFormat,
   OggOutputFormat,
   Output,
-  QUALITY_HIGH,
+  Quality,
   StreamTarget,
   canEncodeAudio,
   type StreamTargetChunk,
@@ -108,6 +108,7 @@ async function encodedSink(
   format: "m4a" | "opus",
   channels: number,
   rate: number,
+  bitrate: number,
 ): Promise<Sink> {
   const codec = format === "m4a" ? "aac" : "opus";
   const outRate = format === "opus" ? OPUS_RATE : rate;
@@ -118,7 +119,7 @@ async function encodedSink(
     format: format === "m4a" ? new Mp4OutputFormat() : new OggOutputFormat(),
     target: new StreamTarget(writable),
   });
-  const source = new AudioSampleSource({ codec, quality: QUALITY_HIGH });
+  const source = new AudioSampleSource({ codec, quality: new Quality({ bitrate }) });
   output.addAudioTrack(source);
   await output.start();
   const resamplers =
@@ -167,7 +168,7 @@ async function exportMix(req: ExportRequest): Promise<{ path: string; bytes: num
       ? wavSink(w, frames, channels, rate)
       : format === "flac"
         ? flacSink(w, channels, rate)
-        : await encodedSink(w, format, channels, rate);
+        : await encodedSink(w, format, channels, rate, req.bitrate);
 
   const gains = [...layerGains(project)].filter(([, g]) => g > 0);
   const blocks = await LayerBlocks.open(dir, project);
@@ -201,20 +202,41 @@ async function exportMix(req: ExportRequest): Promise<{ path: string; bytes: num
   return { path, bytes: (await handle.getFile()).size };
 }
 
-async function probe(project: Project): Promise<ExportFormat[]> {
-  const options = { numberOfChannels: project.source.channels, sampleRate: project.source.sampleRate };
-  const out: ExportFormat[] = ["wav", "flac"];
-  if (await canEncodeAudio("aac", { ...options, quality: QUALITY_HIGH })) out.push("m4a");
-  if (await canEncodeAudio("opus", { ...options, sampleRate: OPUS_RATE, quality: QUALITY_HIGH }))
-    out.push("opus");
-  return out;
+const CANDIDATE_KBPS = [32, 48, 64, 96, 128, 160, 192, 256];
+
+/**
+ * Which lossy formats and bitrates this browser can encode. Platform encoders differ: Windows' AAC encoder
+ * only takes a few fixed bitrates, none below 96 kbps.
+ */
+async function probe(project: Project) {
+  const channels = project.source.channels;
+  const supported = async (codec: "aac" | "opus", sampleRate: number) => {
+    const ok = await Promise.all(
+      CANDIDATE_KBPS.map((k) =>
+        canEncodeAudio(codec, {
+          numberOfChannels: channels,
+          sampleRate,
+          quality: new Quality({ bitrate: k * 1000 }),
+        }),
+      ),
+    );
+    return CANDIDATE_KBPS.filter((_, i) => ok[i]);
+  };
+  const kbps = {
+    m4a: await supported("aac", project.source.sampleRate),
+    opus: await supported("opus", OPUS_RATE),
+  };
+  const formats: ExportFormat[] = ["wav", "flac"];
+  if (kbps.m4a.length > 0) formats.push("m4a");
+  if (kbps.opus.length > 0) formats.push("opus");
+  return { formats, kbps };
 }
 
 addEventListener("message", (e: MessageEvent<{ type: "probe"; project: Project } | ExportRequest>) => {
   const req = e.data;
   if ("type" in req) {
     probe(req.project).then(
-      (formats) => post({ type: "formats", formats }),
+      (r) => post({ type: "formats", ...r }),
       (err: unknown) => post({ type: "error", message: String(err) }),
     );
     return;

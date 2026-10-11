@@ -47,10 +47,12 @@ export interface ExportRequest {
   /** Source samples. */
   range: { start: number; end: number };
   fileName: string;
+  /** Bits per second for M4A and Opus; ignored by the lossless formats. */
+  bitrate: number;
 }
 
 export type ExportMessage =
-  | { type: "formats"; formats: ExportFormat[] }
+  | { type: "formats"; formats: ExportFormat[]; kbps: Partial<Record<ExportFormat, number[]>> }
   | { type: "progress"; fraction: number }
   | { type: "done"; path: string; bytes: number }
   | { type: "error"; message: string };

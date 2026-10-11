@@ -30,6 +30,11 @@ async function importFile({ file, projectId, name }: ImportRequest): Promise<Pro
   const channels = Math.min(2, await track.getNumberOfChannels()) === 1 ? 1 : 2;
   const expected = Math.max(1, (await track.computeDuration()) * sampleRate);
   await checkSpace(expected, channels);
+  const codec = (await track.getCodec()) ?? undefined;
+  const bitrate = await track.computePacketStats(200).then(
+    (s) => (s.averageBitrate > 0 ? Math.round(s.averageBitrate) : undefined),
+    () => undefined,
+  );
 
   await (await projectsDir()).removeEntry(projectId, { recursive: true }).catch(() => undefined);
   const dir = await projectDir(projectId, true);
@@ -88,7 +93,14 @@ async function importFile({ file, projectId, name }: ImportRequest): Promise<Pro
     name,
     createdAt: new Date().toISOString(),
     engineVersion: ENGINE_VERSION,
-    source: { fileName: file.name, sampleRate, channels, frames },
+    source: {
+      fileName: file.name,
+      sampleRate,
+      channels,
+      frames,
+      ...(codec === undefined ? {} : { codec }),
+      ...(bitrate === undefined ? {} : { bitrate }),
+    },
     layers: [
       {
         id: SOURCE_LAYER,
