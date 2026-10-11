@@ -38,4 +38,5 @@ test("adds the stems model from a file and separates a clip into four stems", as
   for (const stem of ["drums", "bass", "other", "vocals", "rest"]) {
     await expect(page.getByTestId(`layer-${stem}`)).toHaveCount(1);
   }
+  await expect(page.getByTestId("colours")).toHaveText("Stem colours");
 });

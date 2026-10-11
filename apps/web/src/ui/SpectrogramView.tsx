@@ -1,8 +1,8 @@
 import { SPECTROGRAM } from "@spectra-peel/engine";
 import { useRef } from "react";
 import type { Player } from "../audio/player";
-import { COLORMAP } from "./colormap";
 import { formatHz, formatTime } from "./format";
+import { shadeColumn, type Tint } from "./paint";
 import type { ProjectTiles } from "./tiles";
 import { useCanvas, useFrame } from "./useCanvas";
 import { useView } from "./view";
@@ -11,19 +11,16 @@ interface Props {
   tiles: ProjectTiles;
   /** Layer whose spectrogram fills the view. */
   base: string;
-  /** Layer drawn as a cyan tint over the base, such as what a denoise removed. */
-  overlay: string | null;
+  /** Layers drawn in their own colours over the base, such as what a denoise removed or each stem. */
+  tints: readonly Tint[];
   player: Player;
   /** Single-finger drags select a time range instead of panning, for touch screens. */
   selectMode: boolean;
 }
 
-/** Cyan tint; alpha grows faster than linearly so faint removed energy stays out of the way. */
-const TINT = [40, 220, 255] as const;
-
 const FREQ_TICKS = [50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000];
 
-export function SpectrogramView({ tiles, base, overlay, player, selectMode }: Props) {
+export function SpectrogramView({ tiles, base, tints, player, selectMode }: Props) {
   const [ref, size] = useCanvas();
   const [overlayRef, overlaySize] = useCanvas();
   const { start, span, duration, setView, zoom, setSelection } = useView();
@@ -36,7 +33,7 @@ export function SpectrogramView({ tiles, base, overlay, player, selectMode }: Pr
     const { width, height } = size;
     if (!ctx || width === 0 || height === 0) return;
     const view = useView.getState();
-    const key = `${view.start} ${view.span} ${width} ${height} ${tiles.version} ${base} ${overlay}`;
+    const key = `${view.start} ${view.span} ${width} ${height} ${tiles.version} ${base} ${JSON.stringify(tints)}`;
     if (key === drawn.current) return;
     drawn.current = key;
     const image = ctx.createImageData(width, height);
@@ -48,11 +45,17 @@ export function SpectrogramView({ tiles, base, overlay, player, selectMode }: Pr
       Math.min(SPECTROGRAM.bands - 1, Math.floor((1 - (y + 0.5) / height) * SPECTROGRAM.bands)),
     );
     const max = new Uint8Array(SPECTROGRAM.bands);
-    const tint = new Uint8Array(SPECTROGRAM.bands);
-    const gather = (layer: string, out: Uint8Array, from: number, to: number) => {
+    const levels = tints.map(() => new Uint8Array(SPECTROGRAM.bands));
+    const shaded = new Uint32Array(SPECTROGRAM.bands);
+    const gather = (
+      column: (c: number) => Uint8Array | undefined,
+      out: Uint8Array,
+      from: number,
+      to: number,
+    ) => {
       out.fill(0);
       for (let c = from; c < to; c++) {
-        const col = tiles.column(layer, c);
+        const col = column(c);
         if (!col) continue;
         for (let b = 0; b < SPECTROGRAM.bands; b++) if ((col[b] ?? 0) > (out[b] ?? 0)) out[b] = col[b] ?? 0;
       }
@@ -60,21 +63,13 @@ export function SpectrogramView({ tiles, base, overlay, player, selectMode }: Pr
     for (let x = 0; x < width; x++) {
       const from = Math.floor(c0 + x * perPixel);
       const to = Math.max(from + 1, Math.floor(c0 + (x + 1) * perPixel));
-      gather(base, max, from, to);
-      if (overlay !== null) gather(overlay, tint, from, to);
-      for (let y = 0; y < height; y++) {
-        const band = rowBand[y] ?? 0;
-        let px = COLORMAP[max[band] ?? 0] ?? 0;
-        const t = overlay === null ? 0 : (tint[band] ?? 0);
-        if (t > 0) {
-          const a = Math.min(0.85, (t / 255) ** 2 * 1.2);
-          const r = (px & 0xff) * (1 - a) + TINT[0] * a;
-          const g = ((px >> 8) & 0xff) * (1 - a) + TINT[1] * a;
-          const bl = ((px >> 16) & 0xff) * (1 - a) + TINT[2] * a;
-          px = (255 << 24) | (Math.round(bl) << 16) | (Math.round(g) << 8) | Math.round(r);
-        }
-        pixels[y * width + x] = px;
+      gather((c) => tiles.column(base, c), max, from, to);
+      for (const [i, t] of tints.entries()) {
+        const out = levels[i];
+        if (out) gather((c) => tiles.ownColumn(t.layer, c), out, from, to);
       }
+      shadeColumn(max, levels, tints, shaded);
+      for (let y = 0; y < height; y++) pixels[y * width + x] = shaded[rowBand[y] ?? 0] ?? 0;
     }
     ctx.putImageData(image, 0, 0);
   });

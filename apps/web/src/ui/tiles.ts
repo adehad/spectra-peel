@@ -68,11 +68,21 @@ export class ProjectTiles {
   column(layerId: string, column: number): Uint8Array | undefined {
     const layer = this.layers.get(layerId);
     if (!layer) return undefined;
-    const first = layer.start / SPECTROGRAM.hop;
-    const inside = column >= first && column < (layer.start + layer.frames) / SPECTROGRAM.hop;
-    if (inside) return this.caches.get(layerId)?.column(column - first);
+    if (this.inside(layer, column))
+      return this.caches.get(layerId)?.column(column - layer.start / SPECTROGRAM.hop);
     if (layer.data.kind === "flac" && layer.data.fallback !== undefined)
       return this.column(layer.data.fallback, column);
     return undefined;
+  }
+
+  /** Like `column`, but only inside the layer's extent, where it holds energy of its own. */
+  ownColumn(layerId: string, column: number): Uint8Array | undefined {
+    const layer = this.layers.get(layerId);
+    if (!layer || !this.inside(layer, column)) return undefined;
+    return this.caches.get(layerId)?.column(column - layer.start / SPECTROGRAM.hop);
+  }
+
+  private inside(layer: Layer, column: number): boolean {
+    return column >= layer.start / SPECTROGRAM.hop && column < (layer.start + layer.frames) / SPECTROGRAM.hop;
   }
 }
