@@ -27,7 +27,7 @@ export interface DecodedFrame {
   bytes: number;
 }
 
-export function streamInfo(format: FlacFormat, totalSamples: number): Uint8Array {
+export function streamInfo(format: FlacFormat, totalSamples: number): Uint8Array<ArrayBuffer> {
   const w = new BitWriter(FLAC_HEADER_BYTES);
   for (const c of "fLaC") w.byte(c.charCodeAt(0));
   w.bits(1, 1);
@@ -79,13 +79,13 @@ export class FlacWriter {
   }
 
   /** The 42-byte stream header; write it last, over the start of the file, once the length is known. */
-  header(): Uint8Array {
+  header(): Uint8Array<ArrayBuffer> {
     return streamInfo(this.format, this.samples);
   }
 
-  push(channels: readonly Int16Array[]): Uint8Array[] {
+  push(channels: readonly Int16Array[]): Uint8Array<ArrayBuffer>[] {
     const length = channels[0]?.length ?? 0;
-    const out: Uint8Array[] = [];
+    const out: Uint8Array<ArrayBuffer>[] = [];
     let at = 0;
     while (at < length) {
       const n = Math.min(FLAC_BLOCK - this.fill, length - at);
@@ -100,11 +100,11 @@ export class FlacWriter {
     return out;
   }
 
-  finish(): Uint8Array[] {
+  finish(): Uint8Array<ArrayBuffer>[] {
     return this.fill > 0 ? [this.emit()] : [];
   }
 
-  private emit(): Uint8Array {
+  private emit(): Uint8Array<ArrayBuffer> {
     const frame = encodeFrame(
       this.frames,
       this.block.map((b) => b.subarray(0, this.fill)),
@@ -120,7 +120,7 @@ export class FlacWriter {
 
 const Assignment = { Independent: 1, LeftSide: 8, SideRight: 9, MidSide: 10 } as const;
 
-export function encodeFrame(frameNumber: number, channels: readonly Int32Array[]): Uint8Array {
+export function encodeFrame(frameNumber: number, channels: readonly Int32Array[]): Uint8Array<ArrayBuffer> {
   const blockSize = channels[0]?.length ?? 0;
   const w = new BitWriter(32 + channels.length * (4 + Math.ceil(((BPS + 1) * blockSize) / 8)));
 

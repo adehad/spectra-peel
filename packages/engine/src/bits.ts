@@ -1,6 +1,6 @@
 /** MSB-first bit writer over a fixed buffer; the caller sizes it for the worst case. */
 export class BitWriter {
-  readonly bytes: Uint8Array;
+  readonly bytes: Uint8Array<ArrayBuffer>;
   private pos = 0;
   private acc = 0;
   private accBits = 0;

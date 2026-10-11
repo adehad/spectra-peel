@@ -6,6 +6,7 @@ import { applyDenoise, currentLayer, planDenoise, undoLast, type PlannedDenoise 
 import { SOURCE_LAYER, type Mix, type Project } from "../project/schema";
 import { paths, projectDir, readBytes, removeFile, writeProject } from "../storage/opfs";
 import type { DenoiseMessage, DenoiseRequest } from "../workers/protocol";
+import { ExportPanel } from "./ExportPanel";
 import { formatTime } from "./format";
 import { LayersPanel } from "./LayersPanel";
 import { LivePanel } from "./LivePanel";
@@ -125,6 +126,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   const [job, setJob] = useState<Job>();
   const [notice, setNotice] = useState<string>();
   const [selectMode, setSelectMode] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const lastOp = project.ops.at(-1);
   const [base, setBase] = useState(lastOp?.outputs[0] ?? SOURCE_LAYER);
   const [showRemoved, setShowRemoved] = useState(true);
@@ -401,6 +403,14 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         </button>
         <button
           type="button"
+          onClick={() => setExporting(true)}
+          className="rounded bg-edge px-3 py-1 text-sm"
+          data-testid="export"
+        >
+          Export
+        </button>
+        <button
+          type="button"
           aria-pressed={follow}
           onClick={() => setFollow(!follow)}
           className="rounded px-2 py-1 text-xs text-dim aria-pressed:bg-edge aria-pressed:text-zinc-100"
@@ -426,6 +436,9 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           +
         </button>
       </footer>
+      {exporting ? (
+        <ExportPanel project={project} dir={dir} selection={selection} onClose={() => setExporting(false)} />
+      ) : null}
     </div>
   );
 }
