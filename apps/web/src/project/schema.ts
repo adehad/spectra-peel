@@ -55,6 +55,9 @@ export const ProjectSchema = z.object({
     sampleRate: z.number().int().positive(),
     channels: z.union([z.literal(1), z.literal(2)]),
     frames: Samples,
+    /** The imported file's codec and average bitrate, so lossy exports can match them. */
+    codec: z.string().optional(),
+    bitrate: z.number().positive().optional(),
   }),
   layers: z.array(LayerSchema),
   ops: z.array(OpSchema),
