@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@spectra-peel/engine": "workspace:*",
+    "mediabunny": "1.60.0",
     "onnxruntime-web": "1.30.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.63.1",
