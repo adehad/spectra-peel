@@ -11,3 +11,18 @@ export {
   type FlacFormat,
   type StreamInfo,
 } from "./flac";
+export {
+  PEAKS_BASE,
+  PeaksBuilder,
+  deserializePeaks,
+  peaksForRange,
+  serializePeaks,
+  type PeaksPyramid,
+} from "./peaks";
+export {
+  SPECTROGRAM,
+  SpectrogramBuilder,
+  bandEdges,
+  type SpectrogramConfig,
+  type SpectrogramTile,
+} from "./spectrogram";
