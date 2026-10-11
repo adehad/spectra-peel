@@ -28,6 +28,45 @@ Edge 154 (headless, real-GPU flags), Windows 11, 16 threads, NVIDIA Ampere, `sha
 - Simplified, wasm stops running out of memory and runs at RTF 1.55 on 8 desktop threads. WebGPU stays at ~55 s per chunk, so the cost there is one or more slow kernels, not shape ops. Every op left in the graph has a WebGPU kernel. `ort.env.webgpu.profiling` returned no data with the JSPI build, even with `--enable-dawn-features=allow_unsafe_apis`, so the slow kernel is not identified yet. ConvTranspose on long sequences is the first suspect.
 - Hugging Face downloads work on a COEP `require-corp` page.
 
+## Desktop WebGPU kernels, 2026-10-11
+
+Same machine. Single nodes and graph slices were benched with `SPECTRA_BENCH_GRAPH_RUNS`, which feeds random inputs, so their times include upload and readback. GPU kernel times come from `SPECTRA_BENCH_PROFILE=1`. Full-model rows are a 30 s clip at the steady-state chunk time, starting from the patched and simplified float32 model (345 MB).
+
+| Measurement | webgpu | wasm, 8 threads |
+| --- | --: | --: |
+| One `/real_istft/ConvTranspose` node, [8, 2049, 340] to [8, 1, 351232], 4096 taps, stride 1024 (there are two) | 24.9 s | 0.6 s |
+| Next-slowest single node (Softmax [8, 2688, 2688], transfer-bound) | 0.47 s | 0.12 s |
+| Simplified model, per 7.8 s chunk | ~55 s | ~7.5 s |
+| + `reference/rewrite_stft.py` without bin padding (STFT/iSTFT as MatMul + overlap-add) | 5.7 s | 6.4 s |
+| + `subgroups` hidden from ORT | 5.6-6.1 s | |
+| + frequency bins padded 2049 to 2052 (subgroups still on) | 5.7-6.9 s | |
+| + padding and `subgroups` hidden: shipped `rewrite_stft.py` plus `noSubgroups` | 3.9 s (RTF 0.80) | 6.5 s (RTF 1.33) |
+| Same, converted to fp16 with `onnxconverter-common` 1.16.0 | 2.6 s | |
+
+GPU time for one chunk by kernel, rewritten model:
+
+| Kernel | `subgroups` on, 2049 bins | `subgroups` hidden, 2052 bins |
+| --- | --: | --: |
+| All kernels | 5,449 ms | 3,639 ms |
+| MatMulSubgroup + MatMul | 1,825 + 368 ms | 1,137 ms |
+| of which the two iSTFT MatMuls | 966 ms | 413 ms |
+| GemmSubgroup / Gemm | 1,305 ms | 553 ms |
+| Conv2dMM | 549 ms | 552 ms |
+| Transpose | 267 ms | 263 ms |
+| ConvTranspose2D (decoder, 8 taps) | 242 ms | 241 ms |
+
+## Kernel findings
+
+- The two iSTFT ConvTranspose nodes took about 50 of the 55 s per chunk on WebGPU. Every other node runs at wasm speed or better, ignoring transfer cost. Verbose logging showed all nodes on `WebGpuExecutionProvider`, so no CPU fallback is involved.
+- `reference/rewrite_stft.py` rewrites the STFT Conv and iSTFT ConvTranspose as framing, MatMul and overlap-add. It matches the simplified model at 119.2 dB SNR (max abs diff 1.1e-7) in Python ORT. WebGPU goes from ~55 s to 5.7 s per chunk.
+- ORT 1.30 picks `MatMulSubgroup` and `GemmSubgroup` whenever the adapter reports `subgroups`. On this GPU they are about 2x slower than the plain kernels. A self-attention MatMul takes 104 ms against 55 ms, and Gemm [2688, 512] x [512, 2048] takes 59 ms against 25 ms. ORT has no option to turn them off, so the spike's `noSubgroups` option hides the feature on `GPUAdapter.prototype` before session creation.
+- With subgroups hidden, the 2049-bin iSTFT MatMuls ran at ~53 GFLOP/s. Zero-padding to 2052 bins brings them to ~220 GFLOP/s, with the same output. Each change does little alone; together they give 3.9 s per chunk, RTF 0.80, against 6.5 s on wasm.
+- `preferredLayout: "NHWC"` gave 5.66 s against 5.68 s for NCHW. `enableGraphCapture` needs GPU-resident inputs and outputs, and CPU dispatch was only 26 ms of a 914 ms slice, so it was not pursued.
+- fp16 reaches 2.6 s per chunk, but a plain conversion gives 71.6 dB SNR overall and 49.3 dB on vocals. One constant (2,752,512) is clamped to 10,000 in the conversion. Keeping fp32 on the nodes that overflow, or on the STFT, norms and softmax, made it worse (2.1 dB and 55.6 dB). fp16 needs per-node work and a listening test before it is usable.
+- Session-level `enableProfiling` works with the JSPI build, unlike `ort.env.webgpu.profiling`. Its "Api" events are per-program GPU times.
+- What is left is plain fp32 GEMM throughput. Gemm [2688, 512] x [512, 2048] runs at ~220 GFLOP/s, a small fraction of an Ampere GPU's fp32 peak.
+- Hiding subgroups is a desktop NVIDIA result. The phone's Adreno may behave differently, so measure it there before shipping the flag.
+
 ## Phone
 
 Not run yet. Target is a Samsung Galaxy S25 (Snapdragon 8 Elite, Adreno 830, 12 GB). Needs the deployed `/spike/` page and its Chrome version.
