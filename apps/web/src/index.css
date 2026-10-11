@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: oklch(0.16 0.01 270);
+  --color-panel: oklch(0.21 0.012 270);
+  --color-edge: oklch(0.3 0.015 270);
+  --color-dim: oklch(0.65 0.015 270);
+  --color-accent: oklch(0.78 0.15 65);
+  --color-source: oklch(0.78 0.1 230);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink text-zinc-100 antialiased;
+  overscroll-behavior: none;
+}

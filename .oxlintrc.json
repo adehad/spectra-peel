@@ -42,7 +42,13 @@
       }
     ],
     "typescript/return-await": "error",
-    "typescript/switch-exhaustiveness-check": "error"
+    "typescript/switch-exhaustiveness-check": "error",
+    "import/no-unassigned-import": [
+      "warn",
+      {
+        "allow": ["**/*.css"]
+      }
+    ]
   },
   "overrides": [
     {

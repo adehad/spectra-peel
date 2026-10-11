@@ -14,16 +14,19 @@
     "onnxruntime-web": "1.30.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "zustand": "5.0.15"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.63.1",
+    "@tailwindcss/vite": "4.3.3",
     "@types/node": "26.6.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
     "@webgpu/types": "0.1.74",
     "cf": "1.0.0-beta.14",
+    "tailwindcss": "4.3.3",
     "vite": "8.3.4"
   }
 }
