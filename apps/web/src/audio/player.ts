@@ -1,5 +1,5 @@
 import { AudioRing } from "@spectra-peel/engine";
-import type { Project } from "../project/schema";
+import { layerGains, type Project } from "../project/schema";
 import type { ReaderMessage, ReaderRequest } from "../workers/protocol";
 import type { MixerMessage, MixerOptions } from "./mixer.worklet";
 // oxlint-disable-next-line import/default -- Vite's ?worker&url query has a default export the resolver cannot see
@@ -8,42 +8,56 @@ import workletUrl from "./mixer.worklet.ts?worker&url";
 /** About 0.7 s at 44.1 kHz: enough to ride out a main-thread stall without making seeks feel late. */
 const RING_FRAMES = 32_768;
 
+/**
+ * Plays every layer of a project at once through its own gain. Each layer also feeds an analyser before
+ * its gain, so the live view shows a layer even while it is muted. A new layer needs a new Player.
+ */
 export class Player {
-  readonly analyser: AnalyserNode;
+  readonly analysers: ReadonlyMap<string, AnalyserNode>;
   readonly sampleRate: number;
   readonly frames: number;
+  private readonly project: Project;
   private readonly ctx: AudioContext;
-  private readonly gain: GainNode;
+  private readonly gains = new Map<string, GainNode>();
   private readonly ring: AudioRing;
   private readonly reader: Worker;
   private readonly ringBuffer: SharedArrayBuffer;
-  private readonly channels: number;
+  private readonly ringChannels: number;
   private node: AudioWorkletNode | undefined;
   private playing = false;
-  private pausedAt = 0;
+  private pausedAt: number;
   private onEnded: () => void = () => undefined;
 
-  constructor(project: Project) {
+  constructor(project: Project, position = 0) {
+    this.project = project;
     this.sampleRate = project.source.sampleRate;
     this.frames = project.source.frames;
-    this.channels = project.source.channels;
+    this.pausedAt = position;
     this.ctx = new AudioContext({ sampleRate: this.sampleRate, latencyHint: "interactive" });
-    this.gain = this.ctx.createGain();
-    this.analyser = new AnalyserNode(this.ctx, { fftSize: 4096, smoothingTimeConstant: 0.5 });
-    this.gain.connect(this.analyser).connect(this.ctx.destination);
+    const analysers = new Map<string, AnalyserNode>();
+    for (const layer of project.layers) {
+      const gain = this.ctx.createGain();
+      gain.connect(this.ctx.destination);
+      this.gains.set(layer.id, gain);
+      analysers.set(layer.id, new AnalyserNode(this.ctx, { fftSize: 4096, smoothingTimeConstant: 0.5 }));
+    }
+    this.analysers = analysers;
+    this.setMix(project);
 
-    this.ringBuffer = new SharedArrayBuffer(AudioRing.bytes(this.channels, RING_FRAMES));
-    this.ring = new AudioRing(this.ringBuffer, this.channels, RING_FRAMES);
+    this.ringChannels = project.layers.length * project.source.channels;
+    this.ringBuffer = new SharedArrayBuffer(AudioRing.bytes(this.ringChannels, RING_FRAMES));
+    this.ring = new AudioRing(this.ringBuffer, this.ringChannels, RING_FRAMES);
     this.reader = new Worker(new URL("../workers/reader.worker.ts", import.meta.url), { type: "module" });
     this.reader.addEventListener("message", (e: MessageEvent<ReaderMessage>) => {
       if (e.data.type === "error") console.error("reader worker:", e.data.message);
     });
     this.send({
       type: "open",
-      projectId: project.id,
+      project,
       ring: this.ringBuffer,
-      channels: this.channels,
+      channels: this.ringChannels,
       capacity: RING_FRAMES,
+      position,
     });
   }
 
@@ -67,8 +81,11 @@ export class Player {
     this.onEnded = fn;
   }
 
-  setGain(value: number): void {
-    this.gain.gain.setTargetAtTime(value, this.ctx.currentTime, 0.01);
+  /** Applies the project's mix (gains, mutes, solo, A/B) with a 10 ms ramp. */
+  setMix(project: Project): void {
+    for (const [id, value] of layerGains(project)) {
+      this.gains.get(id)?.gain.setTargetAtTime(value, this.ctx.currentTime, 0.01);
+    }
   }
 
   async play(): Promise<void> {
@@ -94,7 +111,7 @@ export class Player {
     this.send({ type: "seek", frame: target });
   }
 
-  /** Closes the reader's sync handle before ending the worker, so the project's files can be reopened at once. */
+  /** Closes the reader's sync handles before ending the worker, so the files can be reopened at once. */
   async close(): Promise<void> {
     const closed = new Promise<void>((resolve) => {
       this.reader.addEventListener("message", (e: MessageEvent<ReaderMessage>) => {
@@ -113,17 +130,24 @@ export class Player {
     await this.ctx.audioWorklet.addModule(workletUrl);
     const processorOptions: MixerOptions = {
       ring: this.ringBuffer,
-      channels: this.channels,
+      channels: this.ringChannels,
       capacity: RING_FRAMES,
+      layerChannels: this.project.source.channels,
     };
-    this.node = new AudioWorkletNode(this.ctx, "spectra-mixer", {
+    const node = new AudioWorkletNode(this.ctx, "spectra-mixer", {
       numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
+      numberOfOutputs: this.project.layers.length,
+      outputChannelCount: this.project.layers.map(() => 2),
       processorOptions,
     });
-    this.node.connect(this.gain);
-    return this.node;
+    for (const [i, layer] of this.project.layers.entries()) {
+      const gain = this.gains.get(layer.id);
+      const analyser = this.analysers.get(layer.id);
+      if (gain) node.connect(gain, i);
+      if (analyser) node.connect(analyser, i);
+    }
+    this.node = node;
+    return node;
   }
 
   private mixer(m: MixerMessage): void {

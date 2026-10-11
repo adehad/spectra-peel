@@ -14,8 +14,10 @@ declare global {
 
 export interface MixerOptions {
   ring: SharedArrayBuffer;
+  /** Ring channels: `layerChannels` per output, outputs in order. */
   channels: number;
   capacity: number;
+  layerChannels: number;
 }
 
 export type MixerMessage = { playing: boolean };
@@ -29,13 +31,16 @@ function isMixerOptions(o: unknown): o is MixerOptions {
     "channels" in o &&
     typeof o.channels === "number" &&
     "capacity" in o &&
-    typeof o.capacity === "number"
+    typeof o.capacity === "number" &&
+    "layerChannels" in o &&
+    typeof o.layerChannels === "number"
   );
 }
 
 class Mixer extends AudioWorkletProcessor {
   private readonly ring: AudioRing;
   private readonly scratch: Float32Array[];
+  private readonly layerChannels: number;
   private playing = false;
 
   constructor(options: AudioWorkletNodeOptions) {
@@ -44,20 +49,23 @@ class Mixer extends AudioWorkletProcessor {
     if (!isMixerOptions(o)) throw new TypeError("spectra-mixer needs ring, channels and capacity options");
     this.ring = new AudioRing(o.ring, o.channels, o.capacity);
     this.scratch = Array.from({ length: o.channels }, () => new Float32Array(128));
+    this.layerChannels = o.layerChannels;
     this.port.addEventListener("message", (e: MessageEvent<MixerMessage>) => {
       this.playing = e.data.playing;
     });
     this.port.start();
   }
 
+  /** One output per layer; a mono layer is copied to both output channels. */
   process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
-    const out = outputs[0];
-    if (!out || !this.playing) return true;
-    const frames = out[0]?.length ?? 128;
+    if (!this.playing) return true;
+    const frames = outputs[0]?.[0]?.length ?? 128;
     this.ring.read(this.scratch, frames);
-    for (const [c, channel] of out.entries()) {
-      const src = this.scratch[c] ?? this.scratch[0];
-      if (src) channel.set(src.subarray(0, frames));
+    for (const [layer, out] of outputs.entries()) {
+      for (const [c, channel] of out.entries()) {
+        const src = this.scratch[layer * this.layerChannels + Math.min(c, this.layerChannels - 1)];
+        if (src) channel.set(src.subarray(0, frames));
+      }
     }
     return true;
   }

@@ -1,28 +1,11 @@
-import {
-  ENGINE_VERSION,
-  FLAC_HEADER_BYTES,
-  FlacWriter,
-  PeaksBuilder,
-  SPECTROGRAM,
-  SpectrogramBuilder,
-  Xorshift32,
-  quantize16,
-  serializePeaks,
-  type SpectrogramTile,
-} from "@spectra-peel/engine";
+import { ENGINE_VERSION, SPECTROGRAM } from "@spectra-peel/engine";
 import { ALL_FORMATS, AudioSampleSink, BlobSource, Input } from "mediabunny";
 import { SOURCE_LAYER, type Project } from "../project/schema";
-import { fileAt, paths, projectDir, projectsDir } from "../storage/opfs";
+import { paths, projectDir, projectsDir } from "../storage/opfs";
+import { LayerWriter, writeWhole } from "./layer-writer";
 import type { ImportMessage, ImportRequest } from "./protocol";
 
 const post = (m: ImportMessage) => postMessage(m);
-
-async function writeWhole(dir: FileSystemDirectoryHandle, path: string, data: AllowSharedBufferSource) {
-  const handle = await (await fileAt(dir, path, true)).createSyncAccessHandle();
-  handle.truncate(0);
-  handle.write(data, { at: 0 });
-  handle.close();
-}
 
 const gb = (n: number) => (n / 1e9).toFixed(2);
 
@@ -50,18 +33,14 @@ async function importFile({ file, projectId, name }: ImportRequest): Promise<Pro
 
   await (await projectsDir()).removeEntry(projectId, { recursive: true }).catch(() => undefined);
   const dir = await projectDir(projectId, true);
-  const flac = await (await fileAt(dir, paths.sourceFlac, true)).createSyncAccessHandle();
-  flac.truncate(0);
-  flac.write(new Uint8Array(FLAC_HEADER_BYTES), { at: 0 });
-  let flacAt = FLAC_HEADER_BYTES;
-
-  const writer = new FlacWriter({ sampleRate, channels });
-  const peaks = new PeaksBuilder();
-  const spectrogram = new SpectrogramBuilder(sampleRate);
-  const rng = new Xorshift32(0x5eed);
-  const saveTiles = async (list: SpectrogramTile[]) => {
-    for (const t of list) await writeWhole(dir, paths.tile(SOURCE_LAYER, t.index), t.data);
-  };
+  const writer = await LayerWriter.create(
+    dir,
+    SOURCE_LAYER,
+    paths.sourceFlac,
+    paths.sourceIndex,
+    sampleRate,
+    channels,
+  );
 
   let frames = 0;
   let lastReport = 0;
@@ -89,15 +68,7 @@ async function importFile({ file, projectId, name }: ImportRequest): Promise<Pro
       sample.close();
       if (n === 0) continue;
 
-      for (const frame of writer.push(planes.map((p) => quantize16(p, rng)))) {
-        flac.write(frame, { at: flacAt });
-        flacAt += frame.length;
-      }
-      peaks.push(planes);
-      const [left, right] = planes;
-      let mono = left ?? new Float32Array(n);
-      if (right) mono = mono.map((v, i) => (v + (right[i] ?? 0)) / 2);
-      await saveTiles(spectrogram.push(mono));
+      await writer.push(planes);
 
       frames += n;
       if (performance.now() - lastReport > 200) {
@@ -105,18 +76,11 @@ async function importFile({ file, projectId, name }: ImportRequest): Promise<Pro
         post({ type: "progress", fraction: Math.min(1, frames / expected) });
       }
     }
-    for (const frame of writer.finish()) {
-      flac.write(frame, { at: flacAt });
-      flacAt += frame.length;
-    }
-    flac.write(writer.header(), { at: 0 });
-    flac.flush();
-  } finally {
-    flac.close();
+  } catch (e) {
+    writer.abort();
+    throw e;
   }
-  await saveTiles(spectrogram.finish());
-  await writeWhole(dir, paths.sourceIndex, Float64Array.from([...writer.index, flacAt]));
-  await writeWhole(dir, paths.peaks(SOURCE_LAYER), serializePeaks(peaks.finish()));
+  await writer.finish();
 
   const project: Project = {
     version: 1,
@@ -129,10 +93,13 @@ async function importFile({ file, projectId, name }: ImportRequest): Promise<Pro
       {
         id: SOURCE_LAYER,
         label: "Source",
+        start: 0,
+        frames,
         data: { kind: "flac", path: paths.sourceFlac, index: paths.sourceIndex },
       },
     ],
-    mix: { gains: {}, muted: [] },
+    ops: [],
+    mix: { gains: {}, muted: [], solo: null, ab: "mix" },
   };
   await writeWhole(dir, paths.project, new TextEncoder().encode(JSON.stringify(project, null, 2)));
   return project;

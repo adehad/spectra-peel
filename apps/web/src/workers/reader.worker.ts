@@ -1,38 +1,32 @@
-import { AudioRing, FLAC_BLOCK, decodeFrame, toFloat } from "@spectra-peel/engine";
-import { fileAt, paths, projectDir } from "../storage/opfs";
+import { AudioRing, FLAC_BLOCK } from "@spectra-peel/engine";
+import { LayerBlocks } from "../audio/layer-blocks";
+import { projectDir } from "../storage/opfs";
 import type { ReaderMessage, ReaderRequest } from "./protocol";
 
 const post = (m: ReaderMessage) => postMessage(m);
 const FILL_INTERVAL_MS = 10;
 
+/** Keeps the ring full of every layer's channels, in project layer order. */
 class Reader {
-  private readonly flac: FileSystemSyncAccessHandle;
-  private readonly index: Float64Array;
+  private readonly blocks: LayerBlocks;
   private readonly ring: AudioRing;
-  private readonly channels: number;
-  /** FLAC frame to decode next. */
-  private nextFrame = 0;
+  private nextBlock = 0;
   private pending: Float32Array[] = [];
   private pendingAt = 0;
 
-  constructor(flac: FileSystemSyncAccessHandle, index: Float64Array, ring: AudioRing, channels: number) {
-    this.flac = flac;
-    this.index = index;
+  constructor(blocks: LayerBlocks, ring: AudioRing) {
+    this.blocks = blocks;
     this.ring = ring;
-    this.channels = channels;
-  }
-
-  get frameCount(): number {
-    return this.index.length - 1;
   }
 
   seek(sample: number): void {
     this.ring.seek(sample);
-    this.nextFrame = Math.floor(sample / FLAC_BLOCK);
+    this.nextBlock = Math.floor(sample / FLAC_BLOCK);
     this.pending = [];
     this.pendingAt = 0;
-    if (this.decodeNext())
-      this.pendingAt = Math.min(sample - (this.nextFrame - 1) * FLAC_BLOCK, this.pendingLength);
+    if (this.decodeNext()) {
+      this.pendingAt = Math.min(sample - (this.nextBlock - 1) * FLAC_BLOCK, this.pendingLength);
+    }
   }
 
   fill(): void {
@@ -46,7 +40,7 @@ class Reader {
   }
 
   close(): void {
-    this.flac.close();
+    this.blocks.close();
   }
 
   private get pendingLength(): number {
@@ -54,17 +48,10 @@ class Reader {
   }
 
   private decodeNext(): boolean {
-    if (this.nextFrame >= this.frameCount) return false;
-    const start = this.index[this.nextFrame] ?? 0;
-    const end = this.index[this.nextFrame + 1] ?? start;
-    const bytes = new Uint8Array(end - start);
-    this.flac.read(bytes, { at: start });
-    const frame = decodeFrame(bytes, 0);
-    this.pending = Array.from({ length: this.channels }, (_, c) =>
-      toFloat(frame.channels[c] ?? frame.channels[0] ?? new Int32Array(frame.blockSize)),
-    );
+    if (this.nextBlock >= this.blocks.totalBlocks) return false;
+    const k = this.nextBlock++;
+    this.pending = this.blocks.project.layers.flatMap((layer) => this.blocks.block(layer.id, k));
     this.pendingAt = 0;
-    this.nextFrame++;
     return true;
   }
 }
@@ -73,13 +60,9 @@ let reader: Reader | undefined;
 let timer: ReturnType<typeof setInterval> | undefined;
 
 async function open(req: Extract<ReaderRequest, { type: "open" }>): Promise<void> {
-  const dir = await projectDir(req.projectId);
-  const index = new Float64Array(
-    await (await (await fileAt(dir, paths.sourceIndex)).getFile()).arrayBuffer(),
-  );
-  const flac = await (await fileAt(dir, paths.sourceFlac)).createSyncAccessHandle();
-  reader = new Reader(flac, index, new AudioRing(req.ring, req.channels, req.capacity), req.channels);
-  reader.seek(0);
+  const blocks = await LayerBlocks.open(await projectDir(req.project.id), req.project);
+  reader = new Reader(blocks, new AudioRing(req.ring, req.channels, req.capacity));
+  reader.seek(req.position);
   timer = setInterval(() => reader?.fill(), FILL_INTERVAL_MS);
   post({ type: "ready" });
 }

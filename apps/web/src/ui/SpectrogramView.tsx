@@ -1,25 +1,32 @@
 import { SPECTROGRAM } from "@spectra-peel/engine";
-import { useMemo, useRef } from "react";
+import { useRef } from "react";
 import type { Player } from "../audio/player";
 import { COLORMAP } from "./colormap";
 import { formatHz, formatTime } from "./format";
-import { TileCache } from "./tiles";
+import type { ProjectTiles } from "./tiles";
 import { useCanvas, useFrame } from "./useCanvas";
 import { useView } from "./view";
 
 interface Props {
-  dir: FileSystemDirectoryHandle;
-  layer: string;
+  tiles: ProjectTiles;
+  /** Layer whose spectrogram fills the view. */
+  base: string;
+  /** Layer drawn as a cyan tint over the base, such as what a denoise removed. */
+  overlay: string | null;
   player: Player;
+  /** Single-finger drags select a time range instead of panning, for touch screens. */
+  selectMode: boolean;
 }
+
+/** Cyan tint; alpha grows faster than linearly so faint removed energy stays out of the way. */
+const TINT = [40, 220, 255] as const;
 
 const FREQ_TICKS = [50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000];
 
-export function SpectrogramView({ dir, layer, player }: Props) {
+export function SpectrogramView({ tiles, base, overlay, player, selectMode }: Props) {
   const [ref, size] = useCanvas();
   const [overlayRef, overlaySize] = useCanvas();
-  const tiles = useMemo(() => new TileCache(dir, layer), [dir, layer]);
-  const { start, span, duration, setView, zoom } = useView();
+  const { start, span, duration, setView, zoom, setSelection } = useView();
   const rate = player.sampleRate;
   const nyquist = rate / 2;
   const drawn = useRef("");
@@ -29,7 +36,7 @@ export function SpectrogramView({ dir, layer, player }: Props) {
     const { width, height } = size;
     if (!ctx || width === 0 || height === 0) return;
     const view = useView.getState();
-    const key = `${view.start} ${view.span} ${width} ${height} ${tiles.version}`;
+    const key = `${view.start} ${view.span} ${width} ${height} ${tiles.version} ${base} ${overlay}`;
     if (key === drawn.current) return;
     drawn.current = key;
     const image = ctx.createImageData(width, height);
@@ -41,16 +48,33 @@ export function SpectrogramView({ dir, layer, player }: Props) {
       Math.min(SPECTROGRAM.bands - 1, Math.floor((1 - (y + 0.5) / height) * SPECTROGRAM.bands)),
     );
     const max = new Uint8Array(SPECTROGRAM.bands);
+    const tint = new Uint8Array(SPECTROGRAM.bands);
+    const gather = (layer: string, out: Uint8Array, from: number, to: number) => {
+      out.fill(0);
+      for (let c = from; c < to; c++) {
+        const col = tiles.column(layer, c);
+        if (!col) continue;
+        for (let b = 0; b < SPECTROGRAM.bands; b++) if ((col[b] ?? 0) > (out[b] ?? 0)) out[b] = col[b] ?? 0;
+      }
+    };
     for (let x = 0; x < width; x++) {
       const from = Math.floor(c0 + x * perPixel);
       const to = Math.max(from + 1, Math.floor(c0 + (x + 1) * perPixel));
-      max.fill(0);
-      for (let c = from; c < to; c++) {
-        const col = tiles.column(c);
-        if (!col) continue;
-        for (let b = 0; b < SPECTROGRAM.bands; b++) if ((col[b] ?? 0) > (max[b] ?? 0)) max[b] = col[b] ?? 0;
+      gather(base, max, from, to);
+      if (overlay !== null) gather(overlay, tint, from, to);
+      for (let y = 0; y < height; y++) {
+        const band = rowBand[y] ?? 0;
+        let px = COLORMAP[max[band] ?? 0] ?? 0;
+        const t = overlay === null ? 0 : (tint[band] ?? 0);
+        if (t > 0) {
+          const a = Math.min(0.85, (t / 255) ** 2 * 1.2);
+          const r = (px & 0xff) * (1 - a) + TINT[0] * a;
+          const g = ((px >> 8) & 0xff) * (1 - a) + TINT[1] * a;
+          const bl = ((px >> 16) & 0xff) * (1 - a) + TINT[2] * a;
+          px = (255 << 24) | (Math.round(bl) << 16) | (Math.round(g) << 8) | Math.round(r);
+        }
+        pixels[y * width + x] = px;
       }
-      for (let y = 0; y < height; y++) pixels[y * width + x] = COLORMAP[max[rowBand[y] ?? 0] ?? 0] ?? 0;
     }
     ctx.putImageData(image, 0, 0);
   });
@@ -80,6 +104,15 @@ export function SpectrogramView({ dir, layer, player }: Props) {
       ctx.fillRect(tx, height - 6 * dpr, 1, 6 * dpr);
       ctx.fillText(formatTime(s, step < 1), tx + 3 * dpr, height - 8 * dpr);
     }
+    if (v.selection) {
+      const sx = ((v.selection.start - v.start) / v.span) * width;
+      const ex = ((v.selection.end - v.start) / v.span) * width;
+      ctx.fillStyle = "rgba(255, 190, 90, 0.16)";
+      ctx.fillRect(sx, 0, ex - sx, height);
+      ctx.fillStyle = "rgba(255, 190, 90, 0.9)";
+      ctx.fillRect(sx, 0, dpr, height);
+      ctx.fillRect(ex - dpr, 0, dpr, height);
+    }
     ctx.fillStyle = "oklch(0.78 0.15 65)";
     ctx.fillRect(Math.round(x), 0, Math.max(1, dpr), height);
   });
@@ -90,6 +123,7 @@ export function SpectrogramView({ dir, layer, player }: Props) {
     moved: boolean;
     pointers: Map<number, number>;
     pinch?: number;
+    selectFrom?: number;
   }>({
     x: 0,
     start: 0,
@@ -117,8 +151,14 @@ export function SpectrogramView({ dir, layer, player }: Props) {
           e.currentTarget.setPointerCapture(e.pointerId);
           const g = gesture.current;
           g.pointers.set(e.pointerId, e.clientX);
-          if (g.pointers.size === 1) Object.assign(g, { x: e.clientX, start, moved: false });
-          else g.pinch = pinchWidth(g.pointers);
+          if (g.pointers.size === 1) {
+            Object.assign(g, { x: e.clientX, start, moved: false });
+            if (e.shiftKey || selectMode) g.selectFrom = timeAt(e.clientX, e.currentTarget);
+            else delete g.selectFrom;
+          } else {
+            g.pinch = pinchWidth(g.pointers);
+            delete g.selectFrom;
+          }
         }}
         onPointerMove={(e) => {
           const g = gesture.current;
@@ -131,6 +171,9 @@ export function SpectrogramView({ dir, layer, player }: Props) {
             zoom(g.pinch / Math.max(now, 1), timeAt(center, e.currentTarget));
             g.pinch = now;
             g.moved = true;
+          } else if (g.selectFrom !== undefined) {
+            if (Math.abs(e.clientX - g.x) > 4) g.moved = true;
+            if (g.moved) setSelection({ start: g.selectFrom, end: timeAt(e.clientX, e.currentTarget) });
           } else if (Math.abs(e.clientX - g.x) > 4 || g.moved) {
             g.moved = true;
             useView.getState().setFollow(false);
@@ -141,6 +184,7 @@ export function SpectrogramView({ dir, layer, player }: Props) {
           const g = gesture.current;
           g.pointers.delete(e.pointerId);
           if (g.pointers.size === 0 && !g.moved) {
+            if (g.selectFrom === undefined) setSelection(null);
             player.seek(timeAt(e.clientX, e.currentTarget) * rate);
             useView.getState().setFollow(true);
           }
