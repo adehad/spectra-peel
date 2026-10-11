@@ -1,5 +1,6 @@
 import { SPECTROGRAM } from "@spectra-peel/engine";
 import { useEffect, useState } from "react";
+import { describeAdapter, isIntegrated, requestGpu } from "../audio/gpu";
 import type { Project } from "../project/schema";
 import { formatBytes, formatTime } from "./format";
 
@@ -9,21 +10,37 @@ const RTF = { gpu: 0.8, cpu: 1.6 };
 interface Props {
   project: Project;
   input: string;
-  onRun: () => void;
+  onRun: (useGpu: boolean) => void;
   onClose: () => void;
 }
 
-/** What separating will cost before it starts: disk for four FLAC stems and a rough time. */
+interface Gpu {
+  label: string;
+  integrated: boolean;
+}
+
+/** What separating will cost before it starts: disk for four FLAC stems, where it runs and a rough time. */
 export function StemsConfirm({ project, input, onRun, onClose }: Props) {
   const [free, setFree] = useState<number>();
+  const [gpu, setGpu] = useState<Gpu | null>();
+  const [useGpu, setUseGpu] = useState(false);
+  const threads = Math.max(1, Math.min(navigator.hardwareConcurrency, 8));
   const seconds = project.source.frames / project.source.sampleRate;
   // FLAC at about 60% of 16-bit PCM for music, plus a spectrogram per stem and for the rest layer.
   const bytes =
     4 * project.source.frames * project.source.channels * 2 * 0.6 +
     5 * (project.source.frames / SPECTROGRAM.hop) * SPECTROGRAM.bands;
-  const gpu = "gpu" in navigator;
 
   useEffect(() => {
+    requestGpu().then(
+      (adapter) => {
+        const found = adapter ? { label: describeAdapter(adapter), integrated: isIntegrated(adapter) } : null;
+        setGpu(found);
+        setUseGpu(found !== null && !found.integrated);
+        return undefined;
+      },
+      () => setGpu(null),
+    );
     navigator.storage.estimate().then(
       ({ quota = Infinity, usage = 0 }) => {
         setFree(quota - usage);
@@ -34,6 +51,14 @@ export function StemsConfirm({ project, input, onRun, onClose }: Props) {
   }, []);
 
   const tooBig = free !== undefined && bytes > free;
+  let time: string;
+  if (useGpu && gpu?.integrated)
+    time = `roughly ${formatTime(seconds * RTF.cpu)}; Intel graphics ran about as fast as the CPU`;
+  else {
+    const where = useGpu ? "GPU" : "CPU";
+    time = `roughly ${formatTime(seconds * (useGpu ? RTF.gpu : RTF.cpu))} on a desktop ${where}; a phone takes longer`;
+  }
+
   return (
     <div
       className="fixed inset-0 z-10 grid place-items-end bg-black/50 sm:place-items-center"
@@ -55,12 +80,37 @@ export function StemsConfirm({ project, input, onRun, onClose }: Props) {
             about {formatBytes(bytes)}
             {free === undefined ? "" : ` of ${formatBytes(free)} free`}
           </dd>
-          <dt className="text-dim">Time</dt>
-          <dd>
-            roughly {formatTime(seconds * (gpu ? RTF.gpu : RTF.cpu))} on a desktop {gpu ? "GPU" : "CPU"}; a
-            phone takes longer
+          <dt className="text-dim">Run on</dt>
+          <dd className="flex flex-col gap-1">
+            <label className={`flex items-center gap-2 ${gpu ? "" : "opacity-40"}`}>
+              <input
+                type="radio"
+                checked={useGpu}
+                disabled={!gpu}
+                onChange={() => setUseGpu(true)}
+                className="accent-accent"
+              />
+              GPU{gpu ? ` · ${gpu.label}` : gpu === null ? " · none available" : ""}
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                checked={!useGpu}
+                onChange={() => setUseGpu(false)}
+                className="accent-accent"
+              />
+              CPU · {threads} threads
+            </label>
           </dd>
+          <dt className="text-dim">Time</dt>
+          <dd>{time}</dd>
         </dl>
+        {gpu?.integrated ? (
+          <p className="mb-3 text-xs text-dim">
+            The browser was given the integrated GPU. On Windows, set the browser to High performance under
+            Settings, System, Display, Graphics to use a discrete GPU, then restart it.
+          </p>
+        ) : null}
         {tooBig ? (
           <p role="alert" className="mb-3 text-sm text-red-200">
             Not enough free storage. Delete a project or a model first.
@@ -73,8 +123,8 @@ export function StemsConfirm({ project, input, onRun, onClose }: Props) {
           </button>
           <button
             type="button"
-            disabled={tooBig}
-            onClick={onRun}
+            disabled={tooBig || gpu === undefined}
+            onClick={() => onRun(useGpu)}
             className="rounded bg-accent px-3 py-1.5 text-sm text-ink disabled:opacity-40"
             data-testid="stems-run"
           >

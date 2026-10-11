@@ -63,9 +63,10 @@ export interface SeparateRequest {
   /** FLAC layers in the model's source order, then the residual whose tiles to write. */
   stems: Layer[];
   rest: Layer;
+  useGpu: boolean;
 }
 
 export type SeparateMessage =
   | { type: "progress"; fraction: number; stage: string; etaSeconds: number | null }
-  | { type: "done"; provider: string; realTimeFactor: number }
+  | { type: "done"; device: string; realTimeFactor: number }
   | { type: "error"; message: string };

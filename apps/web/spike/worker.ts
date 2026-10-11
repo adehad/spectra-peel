@@ -1,6 +1,5 @@
 import { OverlapAdder, planChunks, transitionWindow } from "@spectra-peel/engine";
 import * as ort from "onnxruntime-web/jspi";
-import { hideSubgroups } from "../src/workers/ort-session";
 import { MODELS, type ModelKey } from "./models";
 import type { Report, RunRequest, WorkerMessage } from "./protocol";
 
@@ -62,6 +61,22 @@ async function loadModel(
     downloadMs: performance.now() - t0,
     fromCache: false,
   };
+}
+
+// ORT picks its MatMulSubgroup and GemmSubgroup kernels whenever the adapter reports `subgroups`,
+// and on desktop Ampere those run about 2x slower than the plain kernels. The bench compares both.
+function hideSubgroups() {
+  const descriptor = Object.getOwnPropertyDescriptor(GPUAdapter.prototype, "features");
+  if (!descriptor) return;
+  const original = Object.defineProperty({}, "features", descriptor);
+  Object.defineProperty(GPUAdapter.prototype, "features", {
+    ...descriptor,
+    get(this: GPUAdapter) {
+      const features: unknown = Reflect.get(original, "features", this);
+      if (!(features instanceof GPUSupportedFeatures)) return features;
+      return new Set([...features].filter((f) => !f.startsWith("subgroup")));
+    },
+  });
 }
 
 async function createSession(bytes: Uint8Array, ep: RunRequest["ep"], webgpu: RunRequest["webgpu"]) {
