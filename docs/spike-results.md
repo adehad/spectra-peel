@@ -82,3 +82,9 @@ Not run yet. Target is a Samsung Galaxy S25 (Snapdragon 8 Elite, Adreno 830, 12 
 | Seek to a clicked point while playing | 41 to 214 ms until the clock moves |
 
 Resident memory grows by about 85 MB over the hour. About 10 MB of that is the peaks pyramid being built, which has to stay in memory until the import ends. The rest may be garbage V8 has not collected yet, or a real leak. RSS cannot tell them apart. Reading the worker's live heap over CDP failed, because Playwright's own session owns the worker target. A heap snapshot in a headed run is the next check. Writing spectrogram tiles without awaiting each write let them queue behind OPFS: memory reached 341 MB and the import took 119 s, so the import worker now writes tiles one at a time.
+
+## Denoise, desktop, 2026-10-11
+
+Whole-file denoise of a synthetic 3-minute, 44.1 kHz stereo WAV in the app: 24.4 s, so 0.14x real time for both channels together, or about 8 minutes for an hour. Each channel goes 44.1 to 48 kHz, through DeepFilterNet3 on the wasm provider with 4 threads in 500-frame chunks, then back. The channels run one after the other in one worker, so a second worker would roughly halve this.
+
+The synthetic tone fixture is a poor quality check: DeepFilterNet3 is a speech model and takes much of a steady tone along with the hiss. Quality needs real speech, which is what the VoiceBank+DEMAND floor in the plan is for.
