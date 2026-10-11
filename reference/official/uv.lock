@@ -357,6 +357,23 @@ wheels = [
 ]
 
 [[package]]
+name = "scipy"
+version = "1.13.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ae/00/48c2f661e2816ccf2ecd77982f6605b2950afe60f60a52b4cbbc2504aa8f/scipy-1.13.1.tar.gz", hash = "sha256:095a87a0312b08dfd6a6155cbbd310a8c51800fc931b8c0b84003014b874ed3c", size = 57210720, upload-time = "2024-05-23T03:29:26.079Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b4/15/4a4bb1b15bbd2cd2786c4f46e76b871b28799b67891f23f455323a0cdcfb/scipy-1.13.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:27e52b09c0d3a1d5b63e1105f24177e544a222b43611aaf5bc44d4a0979e32f9", size = 39333805, upload-time = "2024-05-23T03:19:43.081Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/92/42476de1af309c27710004f5cdebc27bec62c204db42e05b23a302cb0c9a/scipy-1.13.1-cp311-cp311-macosx_12_0_arm64.whl", hash = "sha256:54f430b00f0133e2224c3ba42b805bfd0086fe488835effa33fa291561932326", size = 30317687, upload-time = "2024-05-23T03:19:48.799Z" },
+    { url = "https://files.pythonhosted.org/packages/80/ba/8be64fe225360a4beb6840f3cbee494c107c0887f33350d0a47d55400b01/scipy-1.13.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e89369d27f9e7b0884ae559a3a956e77c02114cc60a6058b4e5011572eea9299", size = 33694638, upload-time = "2024-05-23T03:19:55.104Z" },
+    { url = "https://files.pythonhosted.org/packages/36/07/035d22ff9795129c5a847c64cb43c1fa9188826b59344fee28a3ab02e283/scipy-1.13.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a78b4b3345f1b6f68a763c6e25c0c9a23a9fd0f39f5f3d200efe8feda560a5fa", size = 38569931, upload-time = "2024-05-23T03:20:01.82Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/10/f9b43de37e5ed91facc0cfff31d45ed0104f359e4f9a68416cbf4e790241/scipy-1.13.1-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:45484bee6d65633752c490404513b9ef02475b4284c4cfab0ef946def50b3f59", size = 38838145, upload-time = "2024-05-23T03:20:09.173Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/48/4513a1a5623a23e95f94abd675ed91cfb19989c58e9f6f7d03990f6caf3d/scipy-1.13.1-cp311-cp311-win_amd64.whl", hash = "sha256:5713f62f781eebd8d597eb3f88b8bf9274e79eeabf63afb4a737abc6c84ad37b", size = 46196227, upload-time = "2024-05-23T03:20:16.433Z" },
+]
+
+[[package]]
 name = "spectra-peel-official-dfn3"
 version = "0.0.0"
 source = { virtual = "." }
@@ -365,6 +382,7 @@ dependencies = [
     { name = "numpy" },
     { name = "onnx" },
     { name = "onnxruntime" },
+    { name = "scipy" },
     { name = "torch", version = "2.3.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin'" },
     { name = "torch", version = "2.3.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
     { name = "torchaudio", version = "2.3.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin'" },
@@ -377,6 +395,7 @@ requires-dist = [
     { name = "numpy", specifier = "==1.26.4" },
     { name = "onnx", specifier = "==1.17.0" },
     { name = "onnxruntime", specifier = "==1.20.1" },
+    { name = "scipy", specifier = "==1.13.1" },
     { name = "torch", specifier = "==2.3.1", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchaudio", specifier = "==2.3.1", index = "https://download.pytorch.org/whl/cpu" },
 ]

@@ -1,0 +1,9 @@
+{
+  "samples": 960000,
+  "windows": 26,
+  "framesPerWindow": 589,
+  "embeddings": 46,
+  "dimension": 192,
+  "speakers": 2,
+  "fbankFrames": 298
+}

@@ -43,3 +43,23 @@ export { crossfadeWeight, layerExtent, paddedRange, type SampleRange } from "./r
 export { Sha256 } from "./sha256";
 export { DEMUCS, SeparationStream, type SeparationModel } from "./separate";
 export { LoudnessMeter, normalizationGain, type LoudnessResult } from "./loudness";
+export { Fbank } from "./fbank";
+export {
+  DIARIZATION,
+  centred,
+  clusterVoices,
+  decodePowerset,
+  soloSpans,
+  speakerActivity,
+  windowStarts,
+  type Voices,
+  type Window,
+} from "./diarize";
+export {
+  frameGain,
+  overlapPieces,
+  separateCrosstalk,
+  type Embed,
+  type SeparatedPiece,
+  type SpeakerSeparationModel,
+} from "./crosstalk";
