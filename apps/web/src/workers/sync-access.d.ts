@@ -13,5 +13,8 @@ interface FileSystemSyncAccessHandle {
 }
 
 interface FileSystemFileHandle {
-  createSyncAccessHandle(): Promise<FileSystemSyncAccessHandle>;
+  /** "read-only" handles can coexist with each other; the default "readwrite" is exclusive. */
+  createSyncAccessHandle(options?: {
+    mode?: "readwrite" | "read-only" | "readwrite-unsafe";
+  }): Promise<FileSystemSyncAccessHandle>;
 }

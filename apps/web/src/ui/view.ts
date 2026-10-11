@@ -10,7 +10,10 @@ interface ViewState {
   start: number;
   span: number;
   follow: boolean;
+  /** Seconds; null means the whole file. */
+  selection: { start: number; end: number } | null;
   reset: (duration: number) => void;
+  setSelection: (selection: { start: number; end: number } | null) => void;
   setView: (start: number, span?: number) => void;
   zoom: (factor: number, anchor: number) => void;
   setFollow: (follow: boolean) => void;
@@ -26,7 +29,15 @@ export const useView = create<ViewState>((set) => ({
   start: 0,
   span: 30,
   follow: true,
-  reset: (duration) => set({ duration, follow: true, ...clamp(duration, 0, 30) }),
+  selection: null,
+  reset: (duration) => set({ duration, follow: true, selection: null, ...clamp(duration, 0, 30) }),
+  setSelection: (selection) =>
+    set((v) => {
+      if (!selection) return { selection: null };
+      const start = Math.max(0, Math.min(selection.start, selection.end));
+      const end = Math.min(v.duration, Math.max(selection.start, selection.end));
+      return { selection: end - start > 0.05 ? { start, end } : null };
+    }),
   setView: (start, span) => set((v) => clamp(v.duration, start, span ?? v.span)),
   zoom: (factor, anchor) =>
     set((v) => {

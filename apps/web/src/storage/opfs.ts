@@ -8,6 +8,8 @@ export const paths = {
   project: "project.json",
   sourceFlac: "source.flac",
   sourceIndex: "source.idx",
+  layerFlac: (layer: string) => `layers/${layer}.flac`,
+  layerIndex: (layer: string) => `layers/${layer}.idx`,
   peaks: (layer: string) => `derived/peaks/${layer}.bin`,
   tile: (layer: string, n: number) => `derived/tiles/${layer}/${n}.bin`,
 };
@@ -36,6 +38,26 @@ export async function fileAt(
 
 export async function readBytes(dir: FileSystemDirectoryHandle, path: string): Promise<ArrayBuffer> {
   return (await (await fileAt(dir, path)).getFile()).arrayBuffer();
+}
+
+/** Main thread only: project.json is never held by a sync handle, so a writable stream is safe. */
+export async function writeProject(dir: FileSystemDirectoryHandle, project: Project): Promise<void> {
+  const writable = await (await fileAt(dir, paths.project, true)).createWritable();
+  await writable.write(JSON.stringify(ProjectSchema.parse(project), null, 2));
+  await writable.close();
+}
+
+/** Deletes a file if it exists, creating no directories on the way. */
+export async function removeFile(dir: FileSystemDirectoryHandle, path: string): Promise<void> {
+  const parts = path.split("/");
+  const name = parts.pop() ?? path;
+  try {
+    let d = dir;
+    for (const p of parts) d = await d.getDirectoryHandle(p);
+    await d.removeEntry(name, { recursive: true });
+  } catch (e) {
+    if (!(e instanceof DOMException && e.name === "NotFoundError")) throw e;
+  }
 }
 
 export async function readProject(dir: FileSystemDirectoryHandle): Promise<Project> {

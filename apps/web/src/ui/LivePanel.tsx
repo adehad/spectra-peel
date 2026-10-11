@@ -4,6 +4,7 @@ import { useCanvas, useFrame } from "./useCanvas";
 
 export interface LiveLayer {
   id: string;
+  label: string;
   color: string;
   analyser: AnalyserNode;
 }
@@ -17,9 +18,10 @@ const MIN_HZ = 20;
 const MIN_DB = -100;
 const MAX_DB = -10;
 
-/** What is playing right now: one spectrum curve per layer, or a scrolling waterfall of the first layer. */
+/** What is playing right now: one spectrum curve per layer, or a scrolling waterfall of one layer. */
 export function LivePanel({ layers, sampleRate }: Props) {
   const [mode, setMode] = useState<"curves" | "waterfall">("curves");
+  const [focus, setFocus] = useState<string>();
   const [ref, size] = useCanvas();
   const bins = useRef(new Float32Array(0));
   const nyquist = sampleRate / 2;
@@ -51,7 +53,7 @@ export function LivePanel({ layers, sampleRate }: Props) {
       return;
     }
 
-    const first = layers[0];
+    const first = layers.find((l) => l.id === focus) ?? layers[0];
     if (!first) return;
     const n = first.analyser.frequencyBinCount;
     if (bins.current.length !== n) bins.current = new Float32Array(n);
@@ -73,6 +75,20 @@ export function LivePanel({ layers, sampleRate }: Props) {
         <span className="mr-auto text-dim uppercase tracking-wider">
           <span className="hidden md:inline">Live</span>
         </span>
+        {mode === "waterfall" && layers.length > 1 ? (
+          <select
+            aria-label="Waterfall layer"
+            value={focus ?? layers[0]?.id}
+            onChange={(e) => setFocus(e.target.value)}
+            className="rounded bg-edge px-1 py-0.5 text-zinc-100"
+          >
+            {layers.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
         {(["curves", "waterfall"] as const).map((m) => (
           <button
             key={m}
