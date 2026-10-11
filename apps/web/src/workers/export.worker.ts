@@ -2,8 +2,10 @@ import {
   FLAC_BLOCK,
   FLAC_HEADER_BYTES,
   FlacWriter,
+  LoudnessMeter,
   Resampler,
   Xorshift32,
+  normalizationGain,
   quantize16,
 } from "@spectra-peel/engine";
 import {
@@ -20,7 +22,7 @@ import {
 import { LayerBlocks } from "../audio/layer-blocks";
 import { layerGains, type Project } from "../project/schema";
 import { fileAt, projectDir } from "../storage/opfs";
-import type { ExportFormat, ExportMessage, ExportRequest } from "./protocol";
+import type { ExportFormat, ExportMessage, ExportRequest, LoudnessReport } from "./protocol";
 
 const post = (m: ExportMessage) => postMessage(m);
 const OPUS_RATE = 48_000;
@@ -153,7 +155,9 @@ async function encodedSink(
   };
 }
 
-async function exportMix(req: ExportRequest): Promise<{ path: string; bytes: number }> {
+async function exportMix(
+  req: ExportRequest,
+): Promise<{ path: string; bytes: number; loudness: LoudnessReport | null }> {
   const { project, format, range } = req;
   const rate = project.source.sampleRate;
   const channels = project.source.channels;
@@ -172,25 +176,46 @@ async function exportMix(req: ExportRequest): Promise<{ path: string; bytes: num
 
   const gains = [...layerGains(project)].filter(([, g]) => g > 0);
   const blocks = await LayerBlocks.open(dir, project);
-  try {
-    const first = Math.floor(range.start / FLAC_BLOCK);
-    const last = Math.ceil(range.end / FLAC_BLOCK);
-    for (let k = first; k < last; k++) {
-      const base = k * FLAC_BLOCK;
-      const from = Math.max(0, range.start - base);
-      const to = Math.min(blocks.blockLength(k), range.end - base);
-      const mix = Array.from({ length: channels }, () => new Float32Array(to - from));
-      for (const [id, g] of gains) {
-        const planes = blocks.block(id, k);
-        for (let c = 0; c < channels; c++) {
-          const src = planes[c];
-          const dst = mix[c];
-          if (!src || !dst) continue;
-          for (let i = 0; i < dst.length; i++) dst[i] = (dst[i] ?? 0) + g * (src[from + i] ?? 0);
-        }
+  const first = Math.floor(range.start / FLAC_BLOCK);
+  const last = Math.ceil(range.end / FLAC_BLOCK);
+  const mixBlock = (k: number, gain: number) => {
+    const base = k * FLAC_BLOCK;
+    const from = Math.max(0, range.start - base);
+    const to = Math.min(blocks.blockLength(k), range.end - base);
+    const mix = Array.from({ length: channels }, () => new Float32Array(to - from));
+    for (const [id, g] of gains) {
+      const planes = blocks.block(id, k);
+      for (let c = 0; c < channels; c++) {
+        const src = planes[c];
+        const dst = mix[c];
+        if (!src || !dst) continue;
+        for (let i = 0; i < dst.length; i++) dst[i] = (dst[i] ?? 0) + g * gain * (src[from + i] ?? 0);
       }
-      await sink.write(mix);
-      if (k % 32 === 0) post({ type: "progress", fraction: (k - first) / Math.max(1, last - first) });
+    }
+    return mix;
+  };
+  const passes = req.normalize ? 2 : 1;
+  const progress = (pass: number, k: number) => {
+    if (k % 32 === 0)
+      post({ type: "progress", fraction: (pass + (k - first) / Math.max(1, last - first)) / passes });
+  };
+  let loudness: LoudnessReport | null = null;
+  try {
+    let gain = 1;
+    if (req.normalize) {
+      const meter = new LoudnessMeter(rate, channels);
+      for (let k = first; k < last; k++) {
+        meter.push(mixBlock(k, 1));
+        progress(0, k);
+      }
+      const measured = meter.result();
+      const gainDb = normalizationGain(measured, req.normalize.target, req.normalize.ceiling);
+      loudness = { measured: measured.integrated, truePeak: measured.truePeak, gainDb };
+      gain = 10 ** (gainDb / 20);
+    }
+    for (let k = first; k < last; k++) {
+      await sink.write(mixBlock(k, gain));
+      progress(passes - 1, k);
     }
     await sink.finish();
   } catch (e) {
@@ -199,7 +224,7 @@ async function exportMix(req: ExportRequest): Promise<{ path: string; bytes: num
   } finally {
     blocks.close();
   }
-  return { path, bytes: (await handle.getFile()).size };
+  return { path, bytes: (await handle.getFile()).size, loudness };
 }
 
 const CANDIDATE_KBPS = [32, 48, 64, 96, 128, 160, 192, 256];

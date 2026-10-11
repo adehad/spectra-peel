@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useJobs } from "../jobs";
 import type { Project } from "../project/schema";
 import { fileAt } from "../storage/opfs";
-import type { ExportFormat, ExportMessage, ExportRequest } from "../workers/protocol";
+import type { ExportFormat, ExportMessage, ExportRequest, LoudnessReport } from "../workers/protocol";
 import { formatBytes, formatTime } from "./format";
 
 const LABELS: Record<ExportFormat, string> = {
@@ -11,6 +11,26 @@ const LABELS: Record<ExportFormat, string> = {
   m4a: "M4A · AAC",
   opus: "Opus · Ogg",
 };
+
+/** Integrated loudness targets in LUFS. Mono reads 3 LU below the same audio in stereo under BS.1770. */
+const TARGETS = [
+  { lufs: -14, label: "-14 LUFS · music streaming" },
+  { lufs: -16, label: "-16 LUFS · stereo speech, podcasts" },
+  { lufs: -19, label: "-19 LUFS · mono speech, podcasts" },
+  { lufs: -23, label: "-23 LUFS · EBU R128 broadcast" },
+];
+const CEILING_DBTP = -1;
+
+function describeLoudness(l: LoudnessReport, target: number): string {
+  if (!Number.isFinite(l.measured)) return "Silent, so the level was left alone.";
+  const sign = l.gainDb >= 0 ? "+" : "";
+  const short = target - (l.measured + l.gainDb);
+  const capped =
+    short > 0.05
+      ? ` Stopped ${short.toFixed(1)} LU short of ${target} to keep peaks at ${CEILING_DBTP} dBTP.`
+      : "";
+  return `Measured ${l.measured.toFixed(1)} LUFS, peak ${l.truePeak.toFixed(1)} dBTP; applied ${sign}${l.gainDb.toFixed(1)} dB.${capped}`;
+}
 
 const LOSSY = new Set(["aac", "opus", "mp3", "vorbis"]);
 
@@ -78,7 +98,8 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
   const [scope, setScope] = useState<"all" | "selection">(selection ? "selection" : "all");
   const [kbps, setKbps] = useState<number>();
   const [progress, setProgress] = useState<number>();
-  const [result, setResult] = useState<{ file: File; label: string }>();
+  const [result, setResult] = useState<{ file: File; label: string; loudness: string | null }>();
+  const [target, setTarget] = useState<number | null>(null);
   const [error, setError] = useState<string>();
   const rate = project.source.sampleRate;
 
@@ -129,6 +150,7 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
             setResult({
               file: new File([f], fileName, { type: f.type }),
               label: `${fileName} · ${formatBytes(m.bytes)}`,
+              loudness: m.loudness && target !== null ? describeLoudness(m.loudness, target) : null,
             });
             return undefined;
           })
@@ -141,6 +163,7 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
       range,
       fileName,
       bitrate: chosenKbps * 1000,
+      normalize: target === null ? null : { target, ceiling: CEILING_DBTP },
     };
     worker.postMessage(req);
   };
@@ -198,6 +221,28 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
             ) : null}
           </label>
         ) : null}
+        <label className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+          Loudness
+          <select
+            value={target ?? "off"}
+            onChange={(e) => setTarget(e.target.value === "off" ? null : Number(e.target.value))}
+            className="rounded bg-edge px-1 py-0.5"
+            data-testid="export-loudness"
+          >
+            <option value="off">Keep the mix's level</option>
+            {TARGETS.map((t) => (
+              <option key={t.lufs} value={t.lufs}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          {target === null ? null : (
+            <span className="text-xs text-dim">
+              BS.1770 integrated loudness, one gain for the whole export, peaks kept at or below{" "}
+              {CEILING_DBTP} dBTP.
+            </span>
+          )}
+        </label>
         <fieldset className="mb-3 flex gap-4 text-sm">
           <label className="flex items-center gap-2">
             <input
@@ -233,7 +278,10 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
         )}
         {result ? (
           <div className="mb-3 flex flex-wrap items-center gap-2 text-sm" data-testid="export-result">
-            <span className="mr-auto">{result.label}</span>
+            <span className="mr-auto">
+              {result.label}
+              {result.loudness ? <span className="block text-xs text-dim">{result.loudness}</span> : null}
+            </span>
             {"showSaveFilePicker" in window ? (
               <button
                 type="button"

@@ -49,12 +49,20 @@ export interface ExportRequest {
   fileName: string;
   /** Bits per second for M4A and Opus; ignored by the lossless formats. */
   bitrate: number;
+  /** Loudness target in LUFS and true-peak ceiling in dBTP, or null to export at the mix's own level. */
+  normalize: { target: number; ceiling: number } | null;
+}
+
+export interface LoudnessReport {
+  measured: number;
+  truePeak: number;
+  gainDb: number;
 }
 
 export type ExportMessage =
   | { type: "formats"; formats: ExportFormat[]; kbps: Partial<Record<ExportFormat, number[]>> }
   | { type: "progress"; fraction: number }
-  | { type: "done"; path: string; bytes: number }
+  | { type: "done"; path: string; bytes: number; loudness: LoudnessReport | null }
   | { type: "error"; message: string };
 
 export interface SeparateRequest {

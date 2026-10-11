@@ -12,7 +12,7 @@ Work in progress. See [docs/plan.html](docs/plan.html) for the design and build 
 2. Scrub the overview and the zoomed spectrogram; Shift-drag (or the Select button on touch screens) picks a time range.
 3. **Denoise** the selection or the whole file, or split it into **Stems**. Each op adds layers under the layer you are viewing; the source is never changed.
 4. Mix layers with gain, mute and solo. **Hear input** flips to the untouched source for comparison. **Removed energy** tints what a denoise took out.
-5. **Export** what you hear as WAV, FLAC, M4A or Opus.
+5. **Export** what you hear as WAV, FLAC, M4A or Opus, optionally normalised to a loudness target (BS.1770 LUFS, peaks capped at -1 dBTP). Lossy exports default to the source's bitrate.
 
 Stems need the HT-Demucs model (345 MB), which is not hosted yet: build it with the scripts in `reference/` and add it under **Models**.
 
