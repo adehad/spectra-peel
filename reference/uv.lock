@@ -188,6 +188,23 @@ wheels = [
 ]
 
 [[package]]
+name = "onnxsim"
+version = "0.8.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "onnx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7e/3c/cbfc805b3716cd7ce4238a0c6980b75227afb87cdccd22f34e986792f8e4/onnxsim-0.8.1.tar.gz", hash = "sha256:101c7b3d31e39c609cdfafddb4d3586572435f76f0e1a191d95d0a6797e1b0a4", size = 14687366, upload-time = "2026-10-09T07:10:54.196Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/56/ef492e16eea7d2f85579f81264bdd41a3058c808ebf31a15340a78589d2f/onnxsim-0.8.1-cp312-abi3-macosx_13_0_arm64.whl", hash = "sha256:153336c674ff7c055f18e0d964e03ed89c1767e0ec793fe050519af14e0fe259", size = 8857461, upload-time = "2026-10-09T07:10:37.429Z" },
+    { url = "https://files.pythonhosted.org/packages/02/69/c96ceb1fcb57ad947759833b2106c93db87f0cf689b86e39279ff74dffc1/onnxsim-0.8.1-cp312-abi3-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:61ba4b7c4174b16d720ce57c1fd4d16fbd951ece2d4f89f3aee3d41628ad8c24", size = 8987234, upload-time = "2026-10-09T07:10:40.563Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/db/8135f2d1eb4ce4235d3ea2deaa9ddf518f455ad3cfe1b07f3c3a07bd2d41/onnxsim-0.8.1-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:eaff55bf7a238548cf79b18a539859870029b431a0b2aa67d4425c03183a2281", size = 9665232, upload-time = "2026-10-09T07:10:43.339Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/22/96011ef5b0ec7b13e787a7df7eed50e5b42f11db4e1ad364eec8652dbf77/onnxsim-0.8.1-cp312-abi3-pyemscripten_2025_0_wasm32.whl", hash = "sha256:92a377f520b251b4418e37b7c6a44d8c1b13d49b5225c3d483825b8c4c765479", size = 5855007, upload-time = "2026-10-09T07:10:45.999Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/7b/61d6a4fa155a52ea7bc16accc7af50afaf4c0e20c38415673f6452cbaf5c/onnxsim-0.8.1-cp312-abi3-win_amd64.whl", hash = "sha256:a7db3a590d1ea86dcbc42b02cc63ae742bd3ec5cd36eefbad00ae1d5a6782887", size = 7981832, upload-time = "2026-10-09T07:10:48.336Z" },
+    { url = "https://files.pythonhosted.org/packages/24/bf/e8810a8b5594458e354f8cd39dc83e05287c7cbc5d45d002aba050651735/onnxsim-0.8.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e896f3a42bc44d8f63256bd5ee13312bc75d3232b89d095b84a65f5457a09fc3", size = 9670413, upload-time = "2026-10-09T07:10:50.829Z" },
+]
+
+[[package]]
 name = "packaging"
 version = "26.3"
 source = { registry = "https://pypi.org/simple" }
@@ -219,6 +236,7 @@ dependencies = [
     { name = "numpy" },
     { name = "onnx" },
     { name = "onnxruntime" },
+    { name = "onnxsim" },
 ]
 
 [package.metadata]
@@ -226,6 +244,7 @@ requires-dist = [
     { name = "numpy", specifier = "==2.5.4" },
     { name = "onnx", specifier = "==1.23.2" },
     { name = "onnxruntime", specifier = "==1.31.0" },
+    { name = "onnxsim", specifier = "==0.8.1" },
 ]
 
 [[package]]
