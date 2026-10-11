@@ -42,3 +42,4 @@ export {
 export { crossfadeWeight, layerExtent, paddedRange, type SampleRange } from "./ranges";
 export { Sha256 } from "./sha256";
 export { DEMUCS, SeparationStream, type SeparationModel } from "./separate";
+export { LoudnessMeter, normalizationGain, type LoudnessResult } from "./loudness";
