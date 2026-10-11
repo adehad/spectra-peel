@@ -60,3 +60,79 @@ export class FFT {
     }
   }
 }
+
+/** Complex FFT for any size whose prime factors are 2, 3 and 5, by recursive mixed-radix decimation in time. */
+export class MixedFFT {
+  readonly size: number;
+  private readonly factors: number[];
+  private readonly cos: Float64Array;
+  private readonly sin: Float64Array;
+  private readonly scratchRe: Float64Array[];
+  private readonly scratchIm: Float64Array[];
+
+  constructor(size: number) {
+    this.size = size;
+    this.factors = [];
+    let n = size;
+    for (const p of [4, 2, 3, 5]) {
+      while (n % p === 0) {
+        this.factors.push(p);
+        n /= p;
+      }
+    }
+    if (n !== 1) throw new RangeError(`FFT size ${size} has a prime factor above 5`);
+    this.cos = Float64Array.from({ length: size }, (_, i) => Math.cos((-2 * Math.PI * i) / size));
+    this.sin = Float64Array.from({ length: size }, (_, i) => Math.sin((-2 * Math.PI * i) / size));
+    this.scratchRe = this.factors.map(() => new Float64Array(size));
+    this.scratchIm = this.factors.map(() => new Float64Array(size));
+  }
+
+  /** Forward transform of (inRe, inIm) into (outRe, outIm). Inputs are left untouched. */
+  transform(inRe: Float64Array, inIm: Float64Array, outRe: Float64Array, outIm: Float64Array): void {
+    this.recurse(inRe, inIm, 0, 1, this.size, outRe, outIm, 0, 0);
+  }
+
+  private recurse(
+    xRe: Float64Array,
+    xIm: Float64Array,
+    offset: number,
+    stride: number,
+    n: number,
+    yRe: Float64Array,
+    yIm: Float64Array,
+    yOffset: number,
+    depth: number,
+  ): void {
+    if (n === 1) {
+      yRe[yOffset] = xRe[offset] ?? 0;
+      yIm[yOffset] = xIm[offset] ?? 0;
+      return;
+    }
+    const r = this.factors[depth] ?? n;
+    const m = n / r;
+    const tRe = this.scratchRe[depth] ?? new Float64Array(n);
+    const tIm = this.scratchIm[depth] ?? new Float64Array(n);
+    for (let q = 0; q < r; q++) {
+      this.recurse(xRe, xIm, offset + q * stride, stride * r, m, tRe, tIm, yOffset + q * m, depth + 1);
+    }
+    const twiddleStep = this.size / n;
+    for (let k = 0; k < m; k++) {
+      for (let p = 0; p < r; p++) {
+        const out = k + p * m;
+        let accRe = 0;
+        let accIm = 0;
+        for (let q = 0; q < r; q++) {
+          const e = ((q * out) % n) * twiddleStep;
+          const wr = this.cos[e] ?? 1;
+          const wi = this.sin[e] ?? 0;
+          const ar = tRe[yOffset + q * m + k] ?? 0;
+          const ai = tIm[yOffset + q * m + k] ?? 0;
+          accRe += ar * wr - ai * wi;
+          accIm += ar * wi + ai * wr;
+        }
+        yRe[yOffset + out] = accRe;
+        yIm[yOffset + out] = accIm;
+      }
+    }
+  }
+}
