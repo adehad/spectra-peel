@@ -63,9 +63,36 @@ async function loadModel(
   };
 }
 
-async function createSession(bytes: Uint8Array, ep: RunRequest["ep"]) {
+// ORT picks its MatMulSubgroup and GemmSubgroup kernels whenever the adapter reports `subgroups`,
+// and on desktop Ampere those run about 2x slower than the plain kernels. ORT has no option to opt out.
+function hideSubgroups() {
+  const descriptor = Object.getOwnPropertyDescriptor(GPUAdapter.prototype, "features");
+  if (!descriptor) return;
+  const original = Object.defineProperty({}, "features", descriptor);
+  Object.defineProperty(GPUAdapter.prototype, "features", {
+    ...descriptor,
+    get(this: GPUAdapter) {
+      const features: unknown = Reflect.get(original, "features", this);
+      if (!(features instanceof GPUSupportedFeatures)) return features;
+      return new Set([...features].filter((f) => !f.startsWith("subgroup")));
+    },
+  });
+}
+
+async function createSession(bytes: Uint8Array, ep: RunRequest["ep"], webgpu: RunRequest["webgpu"]) {
+  const { enableGraphCapture, profile, noSubgroups, ...epOptions } = webgpu ?? {};
+  const options: ort.InferenceSession.SessionOptions =
+    ep === "webgpu"
+      ? {
+          executionProviders: [{ name: "webgpu", ...epOptions }],
+          ...(enableGraphCapture === undefined ? {} : { enableGraphCapture }),
+        }
+      : { executionProviders: [ep] };
+  if (ep === "webgpu" && noSubgroups) hideSubgroups();
+  // Profile events go to the console when the session ends; on WebGPU the "Api" events are GPU kernel times.
+  if (profile) options.enableProfiling = true;
   try {
-    return { session: await ort.InferenceSession.create(bytes, { executionProviders: [ep] }), epUsed: ep };
+    return { session: await ort.InferenceSession.create(bytes, options), epUsed: ep };
   } catch (e) {
     if (ep === "wasm") throw e;
     progress(`webgpu session failed, retrying on wasm: ${String(e)}`);
@@ -143,6 +170,37 @@ async function runDfn3(session: ort.InferenceSession, seconds: number) {
   return { chunks: 1, perChunkMs: [performance.now() - t0], peak };
 }
 
+async function runGraph(session: ort.InferenceSession, runs: number) {
+  let seed = 1;
+  const feeds: Record<string, ort.Tensor> = {};
+  for (const meta of session.inputMetadata) {
+    if (!meta.isTensor || meta.type !== "float32") throw new Error(`input ${meta.name} is not float32`);
+    const dims = meta.shape.map((d) => {
+      if (typeof d !== "number") throw new Error(`input ${meta.name} has symbolic dim ${d}`);
+      return d;
+    });
+    const data = new Float32Array(dims.reduce((a, b) => a * b, 1)).map(() => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647 - 0.5;
+    });
+    feeds[meta.name] = new ort.Tensor("float32", data, dims);
+  }
+  const perChunkMs: number[] = [];
+  let peak = 0;
+  for (let i = 0; i < runs; i++) {
+    const t0 = performance.now();
+    const out = await session.run(feeds);
+    for (const t of Object.values(out)) {
+      const data = await float32(t);
+      t.dispose();
+      if (i === 0) for (const v of data) peak = Math.max(peak, Math.abs(v));
+    }
+    perChunkMs.push(performance.now() - t0);
+    progress(`run ${i + 1}/${runs}: ${(perChunkMs.at(-1) ?? 0).toFixed(0)} ms`);
+  }
+  return { chunks: runs, perChunkMs, peak };
+}
+
 async function handle(req: RunRequest): Promise<void> {
   ort.env.wasm.numThreads = Math.max(1, Math.min(navigator.hardwareConcurrency, 8));
   progress("loading model");
@@ -151,10 +209,15 @@ async function handle(req: RunRequest): Promise<void> {
     : await loadModel(req.model);
   progress("creating session");
   const t0 = performance.now();
-  const { session, epUsed, epFallbackReason } = await createSession(bytes, req.ep);
+  const { session, epUsed, epFallbackReason } = await createSession(bytes, req.ep, req.webgpu);
   const sessionCreateMs = performance.now() - t0;
   const result =
-    req.model === "dfn3" ? await runDfn3(session, req.seconds) : await runDemucs(session, req.seconds);
+    req.graphRuns !== undefined
+      ? await runGraph(session, req.graphRuns)
+      : req.model === "dfn3"
+        ? await runDfn3(session, req.seconds)
+        : await runDemucs(session, req.seconds);
+  if (req.webgpu?.profile) session.endProfiling();
   await session.release();
   const inferenceMs = result.perChunkMs.reduce((a, b) => a + b, 0);
   const report: Report = {

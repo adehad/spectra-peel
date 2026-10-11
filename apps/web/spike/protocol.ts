@@ -6,6 +6,15 @@ export interface RunRequest {
   seconds: number;
   /** Overrides the download, for models patched or converted locally. */
   modelFile?: File;
+  /** Feeds random tensors shaped from the model's input metadata and times this many runs, for subgraphs. */
+  graphRuns?: number;
+  webgpu?: {
+    preferredLayout?: "NCHW" | "NHWC";
+    enableGraphCapture?: boolean;
+    profile?: boolean;
+    /** Hides the adapter's `subgroups` feature from ORT before it creates its device. */
+    noSubgroups?: boolean;
+  };
 }
 
 export interface Report {
