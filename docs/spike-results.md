@@ -88,3 +88,7 @@ Resident memory grows by about 85 MB over the hour. About 10 MB of that is the p
 Whole-file denoise of a synthetic 3-minute, 44.1 kHz stereo WAV in the app: 24.4 s, so 0.14x real time for both channels together, or about 8 minutes for an hour. Each channel goes 44.1 to 48 kHz, through DeepFilterNet3 on the wasm provider with 4 threads in 500-frame chunks, then back. The channels run one after the other in one worker, so a second worker would roughly halve this.
 
 The synthetic tone fixture is a poor quality check: DeepFilterNet3 is a speech model and takes much of a steady tone along with the hiss. Quality needs real speech, which is what the VoiceBank+DEMAND floor in the plan is for.
+
+## Stems, desktop, 2026-10-11
+
+`SPECTRA_STEMS_MODEL=... SPECTRA_STEMS_SECONDS=120 bunx playwright test e2e/stems.spec.ts`: 2 minutes of 44.1 kHz stereo into four stems in the app took 108 s, so 0.90x real time, with the model already stored. The graph is the 4-source `htdemucs_fp16weights.onnx` through `patch_float64.py`, `simplify.py` and `rewrite_stft.py` (121.8 dB SNR against the export), on WebGPU with `subgroups` hidden. The 0.80x spike figure was the model alone; resampling, blending and writing four FLAC layers make up the rest.
