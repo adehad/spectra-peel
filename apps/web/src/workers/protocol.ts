@@ -32,7 +32,6 @@ export interface DenoiseRequest {
   /** The FLAC layer to write, then the residual layer whose tiles to write. */
   output: Layer;
   removed: Layer;
-  modelUrl: string;
 }
 
 export type DenoiseMessage =

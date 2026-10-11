@@ -9,9 +9,9 @@ import {
 } from "@spectra-peel/engine";
 import * as ort from "onnxruntime-web/jspi";
 import { LayerBlocks } from "../audio/layer-blocks";
-import { MODELS } from "../models";
 import { FADE_SECONDS } from "../project/ops";
 import type { Project } from "../project/schema";
+import { modelBytes } from "../storage/models";
 import { projectDir } from "../storage/opfs";
 import { LayerWriter, TileWriter, mono } from "./layer-writer";
 import type { DenoiseMessage, DenoiseRequest } from "./protocol";
@@ -133,16 +133,6 @@ class Queue {
   }
 }
 
-async function loadModel(url: string, sha256: string): Promise<Uint8Array> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`model download failed: ${res.status} ${res.statusText}`);
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-  const hex = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
-  if (hex !== sha256) throw new Error(`model checksum mismatch: expected ${sha256}, got ${hex}`);
-  return bytes;
-}
-
 /** Layers the job must read: the input and everything it falls back to or subtracts. */
 function dependencies(project: Project, id: string, out = new Set<string>()): Set<string> {
   const layer = project.layers.find((l) => l.id === id);
@@ -168,8 +158,7 @@ async function denoise(req: DenoiseRequest): Promise<number> {
 
   post({ type: "progress", fraction: 0, stage: "Loading model" });
   ort.env.wasm.numThreads = Math.max(1, Math.min(navigator.hardwareConcurrency, 4));
-  const model = MODELS["dfn3-stream"];
-  const session = await ort.InferenceSession.create(await loadModel(req.modelUrl, model.sha256), {
+  const session = await ort.InferenceSession.create(await modelBytes("dfn3-stream"), {
     executionProviders: ["wasm"],
   });
 
