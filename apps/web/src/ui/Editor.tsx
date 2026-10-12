@@ -36,7 +36,6 @@ import { StemsConfirm, type StemsReady } from "./StemsConfirm";
 import { ExportPanel } from "./ExportPanel";
 import { formatTime } from "./format";
 import { LayersPanel } from "./LayersPanel";
-import { LivePanel } from "./LivePanel";
 import { Overview } from "./Overview";
 import type { Tint } from "./paint";
 import { layerColor } from "./palette";
@@ -273,6 +272,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     (lastOp && lastOp.kind !== "denoise" ? lastOp.input : lastOp?.outputs[0]) ?? SOURCE_LAYER,
   );
   const [colours, setColours] = useState(true);
+  const [showSpectrum, setShowSpectrum] = useState(true);
   const [focus, setFocus] = useState<string | null>(null);
   const focusTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const onAdjust = useCallback((layer: string, holding: boolean) => {
@@ -546,13 +546,22 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     return () => removeEventListener("keydown", onKey);
   });
 
-  const liveLayers = useMemo(
+  // Only layers that are heard, since the analysers tap them before mute and solo; the viewed one
+  // goes last, so its curve draws on top.
+  const spectrumLayers = useMemo(
     () =>
-      project.layers.flatMap((l) => {
-        const analyser = player.analysers.get(l.id);
-        return analyser ? [{ id: l.id, label: l.label, color: colors.get(l.id) ?? "white", analyser }] : [];
-      }),
-    [project, player, colors],
+      showSpectrum
+        ? project.layers
+            .filter((l) =>
+              project.mix.solo === null ? !project.mix.muted.includes(l.id) : project.mix.solo === l.id,
+            )
+            .toSorted((a, b) => Number(a.id === base) - Number(b.id === base))
+            .flatMap((l) => {
+              const analyser = player.analysers.get(l.id);
+              return analyser ? [{ id: l.id, color: colors.get(l.id) ?? "white", analyser }] : [];
+            })
+        : [],
+    [project, player, colors, base, showSpectrum],
   );
 
   return (
@@ -580,7 +589,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
       <Overview peaks={peaks} player={player} />
       <div className="flex flex-wrap items-center gap-2 border-b border-edge px-3 py-1 text-xs pointer-coarse:text-sm">
         <label className="flex items-center gap-1 text-dim">
-          View
+          <span className="pointer-coarse:sr-only">View</span>
           <select
             value={base}
             onChange={(e) => setBase(e.target.value)}
@@ -615,9 +624,19 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
             className={TOGGLE}
             data-testid="colours"
           >
-            Tint layers
+            Tint<span className="max-sm:hidden"> layers</span>
           </button>
         ) : null}
+        <button
+          type="button"
+          aria-pressed={showSpectrum}
+          onClick={() => setShowSpectrum(!showSpectrum)}
+          className={TOGGLE}
+          title="Each layer's live spectrum at the playhead while playing"
+          data-testid="spectrum"
+        >
+          Spectrum
+        </button>
         <button type="button" aria-pressed={follow} onClick={() => setFollow(!follow)} className={TOGGLE}>
           Follow
         </button>
@@ -692,6 +711,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           player={player}
           selectMode={selectMode}
           focus={focus !== null}
+          spectrum={spectrumLayers}
         />
         {notice ? (
           <p
@@ -703,11 +723,8 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         ) : null}
       </div>
 
-      <div className="flex max-h-[40dvh] shrink-0 flex-col border-t border-edge bg-panel md:grid md:h-48 md:max-h-none md:grid-cols-[2fr_1fr] md:grid-rows-1 md:divide-x md:divide-edge">
-        <div className="hidden md:block md:h-full">
-          <LivePanel layers={liveLayers} sampleRate={rate} />
-        </div>
-        <div className="min-h-0 flex-1 md:h-full">
+      <div className="flex max-h-[40dvh] shrink-0 flex-col border-t border-edge bg-panel">
+        <div className="min-h-0 flex-1 md:mx-auto md:w-full md:max-w-3xl">
           <LayersPanel
             project={project}
             colors={colors}

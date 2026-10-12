@@ -7,6 +7,13 @@ import type { ProjectTiles } from "./tiles";
 import { useCanvas, useFrame } from "./useCanvas";
 import { useView } from "./view";
 
+/** A layer whose live spectrum is drawn at the playhead. */
+export interface SpectrumLayer {
+  id: string;
+  color: string;
+  analyser: AnalyserNode;
+}
+
 interface Props {
   tiles: ProjectTiles;
   /** Layer whose spectrogram fills the view. */
@@ -18,17 +25,23 @@ interface Props {
   selectMode: boolean;
   /** A layer is being adjusted: grey out everything but the coloured tints. */
   focus: boolean;
+  /** Layers whose live spectra to draw at the playhead, the last one on top; empty for none. */
+  spectrum: readonly SpectrumLayer[];
 }
+
+/** Levels the spectrum overlay spans, from the playhead out to its full width. */
+const SPECTRUM_DB = { floor: -100, top: -10 };
 
 const FREQ_TICKS = [50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000];
 
-export function SpectrogramView({ tiles, base, tints, player, selectMode, focus }: Props) {
+export function SpectrogramView({ tiles, base, tints, player, selectMode, focus, spectrum }: Props) {
   const [ref, size] = useCanvas();
   const [overlayRef, overlaySize] = useCanvas();
   const { start, span, duration, setView, zoom, setSelection } = useView();
   const rate = player.sampleRate;
   const nyquist = rate / 2;
   const drawn = useRef("");
+  const bins = useRef<Float32Array<ArrayBuffer>>(new Float32Array(0));
 
   useFrame(() => {
     const ctx = ref.current?.getContext("2d");
@@ -110,6 +123,7 @@ export function SpectrogramView({ tiles, base, tints, player, selectMode, focus 
       ctx.fillRect(sx, 0, dpr, height);
       ctx.fillRect(ex - dpr, 0, dpr, height);
     }
+    drawSpectrum(ctx, spectrum, bins, { x, width, height, dpr, nyquist });
     ctx.fillStyle = "oklch(0.78 0.15 65)";
     ctx.fillRect(Math.round(x), 0, Math.max(1, dpr), height);
   });
@@ -196,6 +210,56 @@ export function SpectrogramView({ tiles, base, tints, player, selectMode, focus 
       )}
     </div>
   );
+}
+
+/**
+ * Each layer's live spectrum as a filled curve growing out from the playhead: frequency on the
+ * spectrogram's own axis, level to the side. It grows leftwards when the playhead is too near the
+ * right edge. Silence draws nothing, so the curves vanish when playback stops.
+ */
+function drawSpectrum(
+  ctx: CanvasRenderingContext2D,
+  layers: readonly SpectrumLayer[],
+  bins: { current: Float32Array<ArrayBuffer> },
+  {
+    x,
+    width,
+    height,
+    dpr,
+    nyquist,
+  }: { x: number; width: number; height: number; dpr: number; nyquist: number },
+): void {
+  const reach = (matchMedia("(pointer: coarse)").matches ? 90 : 120) * dpr;
+  const side = x + reach > width ? -1 : 1;
+  const minHz = SPECTROGRAM.minHz;
+  const span = Math.log(nyquist / minHz);
+  for (const [i, layer] of layers.entries()) {
+    const n = layer.analyser.frequencyBinCount;
+    if (bins.current.length !== n) bins.current = new Float32Array(n);
+    layer.analyser.getFloatFrequencyData(bins.current);
+    const first = Math.max(1, Math.ceil((minHz * n) / nyquist));
+    ctx.beginPath();
+    ctx.moveTo(x, height);
+    let loudest = 0;
+    for (let k = first; k < n; k++) {
+      const level =
+        ((bins.current[k] ?? -Infinity) - SPECTRUM_DB.floor) / (SPECTRUM_DB.top - SPECTRUM_DB.floor);
+      const reached = Math.max(0, Math.min(1, level));
+      loudest = Math.max(loudest, reached);
+      ctx.lineTo(x + side * reached * reach, (1 - Math.log((k * nyquist) / n / minHz) / span) * height);
+    }
+    ctx.lineTo(x, 0);
+    if (loudest === 0) continue;
+    const top = i === layers.length - 1;
+    ctx.globalAlpha = top ? 0.25 : 0.12;
+    ctx.fillStyle = layer.color;
+    ctx.fill();
+    ctx.globalAlpha = top ? 1 : 0.6;
+    ctx.strokeStyle = layer.color;
+    ctx.lineWidth = (top ? 1.5 : 1) * dpr;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
 }
 
 function pinchWidth(pointers: Map<number, number>): number {
