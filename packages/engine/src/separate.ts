@@ -28,6 +28,18 @@ export interface SeparationModel {
   run(mix: Float32Array): Promise<Float32Array>;
 }
 
+export interface SeparationState {
+  input: [Float32Array, Float32Array];
+  inputStart: number;
+  received: number;
+  nextChunk: number;
+  /** Overlap-add sums and window weights from `accStart`, as far as any chunk has reached. */
+  acc: Float32Array[][];
+  weights: Float32Array;
+  accStart: number;
+  emitted: number;
+}
+
 interface Options {
   segment: number;
   overlap: number;
@@ -62,6 +74,43 @@ export class SeparationStream {
     this.window = transitionWindow(this.segment, options.overlap ?? DEMUCS.overlap);
     this.acc = this.makeAcc(this.segment * 2);
     this.weights = new Float32Array(this.segment * 2);
+  }
+
+  /** Where the stream is, so one built with the same model and options can carry on from here. */
+  snapshot(): SeparationState {
+    const reached = Math.max(
+      0,
+      Math.min(this.weights.length, this.nextChunk - this.step + this.segment - this.accStart),
+    );
+    return {
+      input: [this.input[0].slice(), this.input[1].slice()],
+      inputStart: this.inputStart,
+      received: this.received,
+      nextChunk: this.nextChunk,
+      acc: this.acc.map((pair) => pair.map((a) => a.slice(0, reached))),
+      weights: this.weights.slice(0, reached),
+      accStart: this.accStart,
+      emitted: this.emitted,
+    };
+  }
+
+  restore(state: SeparationState): void {
+    this.input = [state.input[0].slice(), state.input[1].slice()];
+    this.inputStart = state.inputStart;
+    this.received = state.received;
+    this.nextChunk = state.nextChunk;
+    const size = Math.max(this.segment * 2, state.weights.length);
+    this.weights = new Float32Array(size);
+    this.weights.set(state.weights);
+    this.acc = state.acc.map((pair) =>
+      pair.map((a) => {
+        const grown = new Float32Array(size);
+        grown.set(a);
+        return grown;
+      }),
+    );
+    this.accStart = state.accStart;
+    this.emitted = state.emitted;
   }
 
   /** Planar stereo in; per source, planar stereo out, for whatever became final. */

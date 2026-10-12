@@ -9,6 +9,7 @@ export {
   readStreamInfo,
   type DecodedFrame,
   type FlacFormat,
+  type FlacWriterState,
   type StreamInfo,
 } from "./flac";
 export {
@@ -18,16 +19,18 @@ export {
   peaksForRange,
   serializePeaks,
   type PeaksPyramid,
+  type PeaksState,
 } from "./peaks";
 export {
   SPECTROGRAM,
   SpectrogramBuilder,
   bandEdges,
   type SpectrogramConfig,
+  type SpectrogramState,
   type SpectrogramTile,
 } from "./spectrogram";
 export { AudioRing } from "./ring";
-export { Resampler } from "./resample";
+export { Resampler, type ResamplerState } from "./resample";
 export { MixedFFT } from "./fft";
 export {
   DFN3,
@@ -41,7 +44,7 @@ export {
 } from "./dfn3";
 export { crossfadeWeight, layerExtent, paddedRange, type SampleRange } from "./ranges";
 export { Sha256 } from "./sha256";
-export { AUDIOSEP, DEMUCS, SeparationStream, type SeparationModel } from "./separate";
+export { AUDIOSEP, DEMUCS, SeparationStream, type SeparationModel, type SeparationState } from "./separate";
 export { LoudnessMeter, normalizationGain, type LoudnessResult } from "./loudness";
 export { Fbank } from "./fbank";
 export {

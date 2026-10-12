@@ -41,6 +41,16 @@ export function bandEdges(sampleRate: number, c: SpectrogramConfig): Uint16Array
   return edges;
 }
 
+export interface SpectrogramState {
+  /** Samples not yet consumed by a column. */
+  pending: Float32Array;
+  total: number;
+  columns: number;
+  /** The columns of the tile being filled. */
+  tile: Uint8Array;
+  tileIndex: number;
+}
+
 /** Builds magnitude columns centred on multiples of the hop from a mono stream, emitted as fixed-size tiles. */
 export class SpectrogramBuilder {
   readonly config: SpectrogramConfig;
@@ -69,6 +79,29 @@ export class SpectrogramBuilder {
     this.buffer = new Float32Array(n * 4);
     this.buffered = n / 2;
     this.tile = new Uint8Array(config.tileColumns * config.bands);
+  }
+
+  snapshot(): SpectrogramState {
+    return {
+      pending: this.buffer.slice(this.consumed, this.buffered),
+      total: this.total,
+      columns: this.columns,
+      tile: this.tile.slice(0, this.tileFill * this.config.bands),
+      tileIndex: this.tileIndex,
+    };
+  }
+
+  restore(state: SpectrogramState): void {
+    this.buffer = new Float32Array(Math.max(this.config.fftSize * 4, state.pending.length * 2));
+    this.buffer.set(state.pending);
+    this.buffered = state.pending.length;
+    this.consumed = 0;
+    this.total = state.total;
+    this.columns = state.columns;
+    this.tile.fill(0);
+    this.tile.set(state.tile);
+    this.tileFill = state.tile.length / this.config.bands;
+    this.tileIndex = state.tileIndex;
   }
 
   push(mono: Float32Array): SpectrogramTile[] {
