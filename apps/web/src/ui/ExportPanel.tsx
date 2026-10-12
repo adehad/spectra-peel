@@ -323,7 +323,7 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
         ) : null}
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm text-dim">
-            Close
+            {result ? "Close" : "Cancel"}
           </button>
           <button
             type="button"
