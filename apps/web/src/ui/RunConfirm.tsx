@@ -72,7 +72,7 @@ export function RunConfirm(props: Props) {
       <dialog
         open
         aria-label={props.name}
-        className="static m-0 w-full max-w-md rounded-t-xl border border-edge bg-panel p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-zinc-100 sm:rounded-xl"
+        className="static m-0 max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-xl border border-edge bg-panel p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-zinc-100 sm:rounded-xl"
       >
         <h2 className="mb-2 font-medium">{title}</h2>
         <p className="mb-3 text-sm text-dim">{about}</p>
