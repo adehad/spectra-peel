@@ -6,14 +6,15 @@ import { RunConfirm } from "./RunConfirm";
 
 /**
  * Measured: about 0.53x real time on an Intel iGPU through WebGPU and 1.2x on 8 wasm
- * threads, counting the chunk overlap. One mono pass whatever the channel count.
+ * threads, counting the chunk overlap; 0.8x on a Pixel 10a's GPU in the app. One mono pass whatever
+ * the channel count.
  */
-const RTF = { gpu: 0.5, cpu: 1.2 };
+const RTF = { gpu: 0.5, cpu: 1.2, phone: 0.8 };
 
 interface Props {
   project: Project;
   input: string;
-  onRun: (prompt: ExtractPrompt, useGpu: boolean) => void;
+  onRun: (prompt: ExtractPrompt, useGpu: boolean, estimateSeconds: number) => void;
   onClose: () => void;
 }
 
@@ -27,12 +28,12 @@ export function ExtractConfirm({ project, input, onRun, onClose }: Props) {
     <RunConfirm
       name="Extract a sound"
       title={`Extract a sound from ${input}`}
-      about="Pulls one kind of sound out of the whole file into a layer of its own; Rest holds everything else. The model hears up to 16 kHz, so anything higher stays in Rest. Speech is the most reliable; the others can leave some of the sound behind."
+      about="Pulls one kind of sound out of the whole file into its own layer, and everything else into Rest."
       bytes={bytes}
       seconds={project.source.frames / project.source.sampleRate}
       rtf={RTF}
       runnable
-      onRun={(useGpu) => onRun(prompt, useGpu)}
+      onRun={(useGpu, estimate) => onRun(prompt, useGpu, estimate)}
       onClose={onClose}
       runLabel="Extract"
       runTestId="extract-run"
@@ -51,6 +52,9 @@ export function ExtractConfirm({ project, input, onRun, onClose }: Props) {
             {p}
           </label>
         ))}
+        <p className="basis-full text-xs text-dim">
+          Speech is the most reliable. The model hears up to 16 kHz, so anything higher stays in Rest.
+        </p>
       </dd>
     </RunConfirm>
   );

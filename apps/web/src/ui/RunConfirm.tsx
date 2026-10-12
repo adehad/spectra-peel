@@ -19,14 +19,20 @@ interface Props {
   bytes: number;
   /** Seconds of audio the job processes. */
   seconds: number;
-  /** Measured real-time factors on a desktop GPU and on 8 CPU threads. */
-  rtf: { gpu: number; cpu: number };
+  /** Measured real-time factors on a desktop GPU and on 8 CPU threads, and on a phone's GPU if known. */
+  rtf: { gpu: number; cpu: number; phone?: number };
   runnable: boolean;
-  onRun: (useGpu: boolean) => void;
+  /** The job always runs on the CPU, so there is no device to choose. */
+  cpuOnly?: boolean;
+  /** Runs the job on the chosen device, with the time estimate shown here. */
+  onRun: (useGpu: boolean, estimateSeconds: number) => void;
   onClose: () => void;
   runLabel: string;
   runTestId: string;
 }
+
+const ON_PHONE = /Android|iPhone|iPad/.test(navigator.userAgent);
+const ON_WINDOWS = navigator.userAgent.includes("Windows");
 
 /** What a long job will cost before it starts: disk, where it runs and a rough time. */
 export function RunConfirm(props: Props) {
@@ -56,13 +62,15 @@ export function RunConfirm(props: Props) {
   }, []);
 
   const tooBig = free !== undefined && bytes > free;
+  const onGpu = useGpu && !props.cpuOnly;
+  const phone = ON_PHONE && onGpu ? rtf.phone : undefined;
+  const estimate = seconds * (phone ?? (onGpu && !gpu?.integrated ? rtf.gpu : rtf.cpu));
   let time: string;
-  if (useGpu && gpu?.integrated)
-    time = `roughly ${formatTime(seconds * rtf.cpu)}; Intel graphics ran about as fast as the CPU`;
-  else {
-    const where = useGpu ? "GPU" : "CPU";
-    time = `roughly ${formatTime(seconds * (useGpu ? rtf.gpu : rtf.cpu))} on a desktop ${where}; a phone takes longer`;
-  }
+  if (phone !== undefined) time = `roughly ${formatTime(estimate)}, as measured on a Pixel 10a`;
+  else if (ON_PHONE) time = `longer than the ${formatTime(estimate)} a desktop takes`;
+  else if (onGpu && gpu?.integrated)
+    time = `roughly ${formatTime(estimate)}; Intel graphics ran about as fast as the CPU`;
+  else time = `roughly ${formatTime(estimate)} on a desktop ${onGpu ? "GPU" : "CPU"}`;
 
   return (
     <div
@@ -83,8 +91,8 @@ export function RunConfirm(props: Props) {
             about {formatBytes(bytes)}
             {free === undefined ? "" : ` of ${formatBytes(free)} free`}
           </dd>
-          <dt className="text-dim">Run on</dt>
-          <dd className="flex flex-col gap-1">
+          <dt className={props.cpuOnly ? "hidden" : "text-dim"}>Run on</dt>
+          <dd className={props.cpuOnly ? "hidden" : "flex flex-col gap-1"}>
             <label className={`flex items-center gap-2 ${gpu ? "" : "opacity-40"}`}>
               <input
                 type="radio"
@@ -108,7 +116,7 @@ export function RunConfirm(props: Props) {
           <dt className="text-dim">Time</dt>
           <dd>{time}</dd>
         </dl>
-        {gpu?.integrated ? (
+        {gpu?.integrated && onGpu && ON_WINDOWS ? (
           <p className="mb-3 text-xs text-dim">
             The browser was given the integrated GPU. On Windows, set the browser to High performance under
             Settings, System, Display, Graphics to use a discrete GPU, then restart it.
@@ -127,7 +135,7 @@ export function RunConfirm(props: Props) {
           <button
             type="button"
             disabled={tooBig || gpu === undefined || !runnable}
-            onClick={() => onRun(useGpu)}
+            onClick={() => onRun(useGpu, estimate)}
             className="rounded bg-accent px-3 py-1.5 text-sm text-ink disabled:opacity-40"
             data-testid={props.runTestId}
           >
