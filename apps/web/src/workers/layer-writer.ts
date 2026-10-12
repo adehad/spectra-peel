@@ -6,16 +6,34 @@ import {
   Xorshift32,
   quantize16,
   serializePeaks,
+  type FlacWriterState,
+  type PeaksState,
+  type SpectrogramState,
   type SpectrogramTile,
 } from "@spectra-peel/engine";
 import { fileAt, paths } from "../storage/opfs";
+
+/**
+ * Opens a sync access handle, waiting up to about 5 s for another one on the same file to close.
+ * A page reloaded mid-job resumes while its old worker's handles are still being released.
+ */
+async function openForWrite(file: FileSystemFileHandle): Promise<FileSystemSyncAccessHandle> {
+  for (let wait = 100; ; wait *= 2) {
+    try {
+      return await file.createSyncAccessHandle();
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "NoModificationAllowedError") || wait > 3200) throw e;
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+}
 
 export async function writeWhole(
   dir: FileSystemDirectoryHandle,
   path: string,
   data: AllowSharedBufferSource,
 ): Promise<void> {
-  const handle = await (await fileAt(dir, path, true)).createSyncAccessHandle();
+  const handle = await openForWrite(await fileAt(dir, path, true));
   handle.truncate(0);
   handle.write(data, { at: 0 });
   handle.close();
@@ -42,6 +60,14 @@ export class TileWriter {
     await this.save(this.builder.finish());
   }
 
+  snapshot(): SpectrogramState {
+    return this.builder.snapshot();
+  }
+
+  restore(state: SpectrogramState): void {
+    this.builder.restore(state);
+  }
+
   private async save(tiles: SpectrogramTile[]): Promise<void> {
     for (const t of tiles) await writeWhole(this.dir, paths.tile(this.layer, t.index), t.data);
   }
@@ -52,6 +78,15 @@ export function mono(planes: readonly Float32Array[]): Float32Array {
   if (!left) return new Float32Array(0);
   if (!right) return left;
   return left.map((v, i) => (v + (right[i] ?? 0)) / 2);
+}
+
+export interface LayerWriterState {
+  /** Bytes of the FLAC file written so far; anything past it is from after the snapshot. */
+  at: number;
+  flac: FlacWriterState;
+  peaks: PeaksState;
+  tiles: SpectrogramState;
+  rng: number;
 }
 
 /** Streams a FLAC layer to OPFS together with its frame index, peaks pyramid and spectrogram tiles. */
@@ -90,10 +125,43 @@ export class LayerWriter {
     sampleRate: number,
     channels: 1 | 2,
   ): Promise<LayerWriter> {
-    const flac = await (await fileAt(dir, flacPath, true)).createSyncAccessHandle();
+    const flac = await openForWrite(await fileAt(dir, flacPath, true));
     flac.truncate(0);
     flac.write(new Uint8Array(FLAC_HEADER_BYTES), { at: 0 });
     return new LayerWriter(dir, layer, indexPath, flac, sampleRate, channels);
+  }
+
+  /** Opens a layer an earlier run was writing and puts it back where `state` was taken. */
+  static async resume(
+    dir: FileSystemDirectoryHandle,
+    layer: string,
+    flacPath: string,
+    indexPath: string,
+    sampleRate: number,
+    channels: 1 | 2,
+    state: LayerWriterState,
+  ): Promise<LayerWriter> {
+    const flac = await openForWrite(await fileAt(dir, flacPath));
+    flac.truncate(state.at);
+    const writer = new LayerWriter(dir, layer, indexPath, flac, sampleRate, channels);
+    writer.at = state.at;
+    writer.writer.restore(state.flac);
+    writer.peaks.restore(state.peaks);
+    writer.tiles.restore(state.tiles);
+    writer.rng.restore(state.rng);
+    return writer;
+  }
+
+  /** Flushes the FLAC written so far and returns where the layer is, for `resume`. */
+  snapshot(): LayerWriterState {
+    this.flac.flush();
+    return {
+      at: this.at,
+      flac: this.writer.snapshot(),
+      peaks: this.peaks.snapshot(),
+      tiles: this.tiles.snapshot(),
+      rng: this.rng.snapshot(),
+    };
   }
 
   get frames(): number {

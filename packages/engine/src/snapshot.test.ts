@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { concatFloat32 as concat } from "./buffers";
 import { Xorshift32, quantize16 } from "./dither";
 import { FlacWriter } from "./flac";
 import { PeaksBuilder } from "./peaks";
@@ -21,16 +22,6 @@ function blocks(input: Float32Array): Float32Array[] {
     out.push(input.subarray(i, Math.min(input.length, i + 997 + 311 * (n % 5))));
   return out;
 }
-
-const concat = (parts: readonly Float32Array[]) => {
-  const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
-};
 
 /** A snapshot goes through structured cloning on its way to storage and back. */
 const stored = <T>(state: T): T => structuredClone(state);
