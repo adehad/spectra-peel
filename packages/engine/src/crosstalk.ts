@@ -127,6 +127,13 @@ export interface SeparatedPiece {
   audio: Float32Array;
 }
 
+export interface CrosstalkOptions {
+  /** Pieces an earlier run already separated; separation starts at this piece of `overlapPieces`. */
+  from?: number;
+  /** Called with the outputs of each piece once it is separated, and awaited. */
+  onPiece?: (done: number, total: number, outputs: SeparatedPiece[]) => Promise<void> | void;
+}
+
 /**
  * Separates each crosstalk piece on a model-length chunk centred on it, and gives each output to one
  * of the two voices by (a) which output carries the mix where only one of them talks inside the chunk
@@ -138,7 +145,7 @@ export async function separateCrosstalk(
   model: SpeakerSeparationModel,
   embed: Embed,
   voices: Voices,
-  onPiece?: (done: number, total: number) => void,
+  { from = 0, onPiece }: CrosstalkOptions = {},
 ): Promise<SeparatedPiece[]> {
   const n = model.segment;
   const pieces = overlapPieces(active, n);
@@ -147,6 +154,7 @@ export async function separateCrosstalk(
   );
   const out: SeparatedPiece[] = [];
   for (const [p, piece] of pieces.entries()) {
+    if (p < from) continue;
     const mid = Math.floor((piece.start + piece.end) / 2) * FRAME;
     const c0 = Math.min(Math.max(mid - Math.floor(n / 2), 0), Math.max(0, mix.length - n));
     const chunk = new Float32Array(n);
@@ -202,11 +210,13 @@ export async function separateCrosstalk(
     frameGain(region, SR, c0, fade);
     const lo = fade.findIndex((g) => g > 0);
     const hi = fade.findLastIndex((g) => g > 0) + 1;
-    for (const [j, yj] of lo < 0 ? [] : y.entries()) {
-      const audio = fade.subarray(lo, hi).map((g, i) => g * (yj[lo + i] ?? 0));
-      out.push({ speaker: owners[j] ?? 0, start: c0 + lo, audio });
-    }
-    onPiece?.(p + 1, pieces.length);
+    const outputs = (lo < 0 ? [] : y).map((yj, j) => ({
+      speaker: owners[j] ?? 0,
+      start: c0 + lo,
+      audio: fade.subarray(lo, hi).map((g, i) => g * (yj[lo + i] ?? 0)),
+    }));
+    out.push(...outputs);
+    await onPiece?.(p + 1, pieces.length, outputs);
   }
   return out;
 }

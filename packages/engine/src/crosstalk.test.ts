@@ -4,6 +4,7 @@ import { DIARIZATION } from "./diarize";
 
 const { frame: FRAME, sampleRate: SR } = DIARIZATION;
 const SEGMENT = 6 * SR;
+const embed = () => Promise.resolve(Float32Array.of(1, 1));
 
 function masks(frames: number, ...spans: [number, number][][]): Uint8Array[] {
   return spans.map((list) => {
@@ -118,13 +119,7 @@ describe("separateCrosstalk", () => {
     const mid = Math.floor((300 + 500) / 2) * FRAME;
     c0 = Math.min(Math.max(mid - SEGMENT / 2, 0), total - SEGMENT);
     const voices = { centroids: [Float64Array.of(1, 0), Float64Array.of(0, 1)], mean: Float64Array.of(0, 0) };
-    const pieces = await separateCrosstalk(
-      mix,
-      active,
-      model,
-      () => Promise.resolve(Float32Array.of(1, 1)),
-      voices,
-    );
+    const pieces = await separateCrosstalk(mix, active, model, embed, voices);
     expect(pieces.map((p) => p.speaker).toSorted((x, y) => x - y)).toEqual([0, 1]);
     for (const p of pieces) {
       const truth = p.speaker === 0 ? a : b;
@@ -138,5 +133,45 @@ describe("separateCrosstalk", () => {
       }
       expect(err / sig).toBeLessThan(0.05);
     }
+  });
+
+  it("resumes after the pieces an earlier run separated", async () => {
+    const frames = 1800;
+    const total = frames * FRAME;
+    const mix = Float32Array.from({ length: total }, (_, i) => 0.1 * Math.sin(i / 7));
+    const active = masks(
+      frames,
+      [[0, 1800]],
+      [
+        [100, 300],
+        [1300, 1500],
+      ],
+    );
+    const runs: number[] = [];
+    const model = {
+      segment: SEGMENT,
+      run(chunk: Float32Array) {
+        runs.push(chunk.length);
+        const out = new Float32Array(2 * SEGMENT);
+        out.set(chunk.map((v) => v / 2));
+        out.set(
+          chunk.map((v) => v / 2),
+          SEGMENT,
+        );
+        return Promise.resolve(out);
+      },
+    };
+    const voices = { centroids: [Float64Array.of(1, 0), Float64Array.of(0, 1)], mean: Float64Array.of(0, 0) };
+    const seen: number[] = [];
+    const all = await separateCrosstalk(mix, active, model, embed, voices, {
+      onPiece: (done, _total, outputs) => {
+        seen.push(done, outputs.length);
+      },
+    });
+    expect(seen).toEqual([1, 2, 2, 2]);
+    runs.length = 0;
+    const rest = await separateCrosstalk(mix, active, model, embed, voices, { from: 1 });
+    expect(runs).toHaveLength(1);
+    expect(rest.map((p) => p.start)).toEqual(all.slice(2).map((p) => p.start));
   });
 });
