@@ -27,6 +27,7 @@ import {
   writeProject,
 } from "../storage/opfs";
 import { modelStatus } from "../storage/models";
+import { extractRawLayer } from "../workers/protocol";
 import { ModelsPanel, type ModelsNeed } from "./ModelsPanel";
 import { DenoiseConfirm } from "./DenoiseConfirm";
 import { ExtractConfirm } from "./ExtractConfirm";
@@ -116,7 +117,10 @@ async function deleteFiles(dir: FileSystemDirectoryHandle, files: string[]): Pro
 
 /** Every file a job may have written, for cleaning up after it fails or is cancelled. */
 function jobFiles(record: JobRecord): string[] {
-  const files = [paths.job(record.request.op.id)];
+  const { op } = record.request;
+  // Extract's raw model output lives in the job folder, but its peaks and tiles do not.
+  const raw = extractRawLayer(op.id);
+  const files = [paths.job(op.id), paths.peaks(raw), `derived/tiles/${raw}`];
   for (const l of jobLayers(record)) {
     if (l.data.kind === "flac") files.push(l.data.path, l.data.index);
     files.push(paths.peaks(l.id), `derived/tiles/${l.id}`);
