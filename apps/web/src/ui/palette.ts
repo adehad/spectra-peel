@@ -34,7 +34,7 @@ const OKLCH: Record<string, readonly [number, number, number]> = {
   Bass: [0.7, 0.15, 290],
   Other: [0.82, 0.12, 95],
   Vocals: [0.8, 0.13, 180],
-  Rest: [0.6, 0.03, 270],
+  Rest: [0.82, 0.11, 255],
   "Person 1": [0.8, 0.14, 75],
   "Person 2": [0.72, 0.16, 330],
   "Person 3": [0.8, 0.14, 140],
