@@ -25,7 +25,7 @@ import {
   writeProject,
 } from "../storage/opfs";
 import { modelStatus } from "../storage/models";
-import { ModelsPanel } from "./ModelsPanel";
+import { ModelsPanel, type ModelsNeed } from "./ModelsPanel";
 import { SpeakersConfirm } from "./SpeakersConfirm";
 import { StemsConfirm, type StemsReady } from "./StemsConfirm";
 import { ExportPanel } from "./ExportPanel";
@@ -244,7 +244,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   const [exporting, setExporting] = useState(false);
   const [stemsReady, setStemsReady] = useState<StemsReady | null>(null);
   const [askingSpeakers, setAskingSpeakers] = useState(false);
-  const [modelsOpen, setModelsOpen] = useState(false);
+  const [modelsNeed, setModelsNeed] = useState<ModelsNeed | null>(null);
   const lastOp = project.ops.at(-1);
   // Parts read best over the mix they came from; a denoise over its result, tinted by what it removed.
   const [base, setBase] = useState(
@@ -387,7 +387,17 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
       ([fast, ...specialists]) => {
         const ready = { fast: fast?.ready ?? false, specialists: specialists.map((s) => s.ready) };
         if (ready.fast || ready.specialists.every(Boolean)) setStemsReady(ready);
-        else setModelsOpen(true);
+        else
+          setModelsNeed({
+            ids: [FAST_STEMS],
+            title: "Add the stems model",
+            about:
+              "Stems needs HT-Demucs on this device. Download it or add its .onnx file, then continue. The best-quality models are optional; add them later from the stems dialog.",
+            onContinue: () => {
+              setModelsNeed(null);
+              askStems();
+            },
+          });
         return undefined;
       },
       (e: unknown) => setNotice(String(e)),
@@ -403,7 +413,17 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     Promise.all(SPEAKER_MODELS.map((id) => modelStatus(id))).then(
       (status) => {
         if (status.every((m) => m.ready)) setAskingSpeakers(true);
-        else setModelsOpen(true);
+        else
+          setModelsNeed({
+            ids: SPEAKER_MODELS,
+            title: "Add the People models",
+            about:
+              "Separating people needs these three models on this device. Download each one, or add its .onnx file if it is not hosted, then continue.",
+            onContinue: () => {
+              setModelsNeed(null);
+              setAskingSpeakers(true);
+            },
+          });
         return undefined;
       },
       (e: unknown) => setNotice(String(e)),
@@ -698,7 +718,17 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           onRun={startStems}
           onOpenModels={() => {
             setStemsReady(null);
-            setModelsOpen(true);
+            setModelsNeed({
+              ids: SPECIALISTS,
+              title: "Add best-quality stem models",
+              about:
+                "Each of these gives one stem at best quality, with one more pass over the file. Add the ones you want, then continue.",
+              optional: true,
+              onContinue: () => {
+                setModelsNeed(null);
+                askStems();
+              },
+            });
           }}
           onClose={() => setStemsReady(null)}
         />
@@ -711,7 +741,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           onClose={() => setAskingSpeakers(false)}
         />
       ) : null}
-      {modelsOpen ? <ModelsPanel onClose={() => setModelsOpen(false)} /> : null}
+      {modelsNeed ? <ModelsPanel need={modelsNeed} onClose={() => setModelsNeed(null)} /> : null}
       {exporting ? (
         <ExportPanel project={project} dir={dir} selection={selection} onClose={() => setExporting(false)} />
       ) : null}
