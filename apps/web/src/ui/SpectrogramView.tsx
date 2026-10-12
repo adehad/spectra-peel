@@ -16,11 +16,13 @@ interface Props {
   player: Player;
   /** Single-finger drags select a time range instead of panning, for touch screens. */
   selectMode: boolean;
+  /** A layer is being adjusted: grey out everything but the coloured tints. */
+  focus: boolean;
 }
 
 const FREQ_TICKS = [50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000];
 
-export function SpectrogramView({ tiles, base, tints, player, selectMode }: Props) {
+export function SpectrogramView({ tiles, base, tints, player, selectMode, focus }: Props) {
   const [ref, size] = useCanvas();
   const [overlayRef, overlaySize] = useCanvas();
   const { start, span, duration, setView, zoom, setSelection } = useView();
@@ -33,7 +35,7 @@ export function SpectrogramView({ tiles, base, tints, player, selectMode }: Prop
     const { width, height } = size;
     if (!ctx || width === 0 || height === 0) return;
     const view = useView.getState();
-    const key = `${view.start} ${view.span} ${width} ${height} ${tiles.version} ${base} ${JSON.stringify(tints)}`;
+    const key = `${view.start} ${view.span} ${width} ${height} ${tiles.version} ${base} ${focus} ${JSON.stringify(tints)}`;
     if (key === drawn.current) return;
     drawn.current = key;
     const image = ctx.createImageData(width, height);
@@ -68,7 +70,7 @@ export function SpectrogramView({ tiles, base, tints, player, selectMode }: Prop
         const out = levels[i];
         if (out) gather((c) => tiles.ownColumn(t.layer, c), out, from, to);
       }
-      shadeColumn(max, levels, tints, shaded);
+      shadeColumn(max, levels, tints, shaded, focus);
       for (let y = 0; y < height; y++) pixels[y * width + x] = shaded[rowBand[y] ?? 0] ?? 0;
     }
     ctx.putImageData(image, 0, 0);
