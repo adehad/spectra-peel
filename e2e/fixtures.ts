@@ -67,3 +67,10 @@ export async function jobStages(page: Page): Promise<string[]> {
   }
   return [...stages];
 }
+
+/** Denoises through the run dialog and waits for the job to finish. */
+export async function denoise(page: Page): Promise<void> {
+  await page.getByTestId("denoise").click();
+  await page.getByTestId("denoise-run").click();
+  await expect(page.getByTestId("job")).toBeHidden({ timeout: 120_000 });
+}

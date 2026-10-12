@@ -50,7 +50,7 @@ test("extracts speech into its own layer after adding the model it asks for", as
   console.log(JSON.stringify({ wall: (Date.now() - t0) / 1000 }));
   await expect(page.getByRole("alert")).toHaveCount(0);
   for (const layer of ["speech", "rest"]) await expect(page.getByTestId(`layer-${layer}`)).toHaveCount(1);
-  await expect(page.getByTestId("colours")).toHaveText("Layer colours");
+  await expect(page.getByTestId("colours")).toHaveAttribute("aria-pressed", "true");
 
   if (!OUT) return;
   mkdirSync(OUT, { recursive: true });

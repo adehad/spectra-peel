@@ -1,6 +1,8 @@
 import { useMemo, useRef } from "react";
 import { SOURCE_LAYER, type Layer, type Mix, type Project } from "../project/schema";
 import { formatTime } from "./format";
+import { opTitle } from "./labels";
+import { useFrame } from "./useCanvas";
 
 interface Props {
   project: Project;
@@ -10,6 +12,8 @@ interface Props {
   onAdjust: (layer: string, holding: boolean) => void;
   onUndo: () => void;
   busy: boolean;
+  /** Each layer's signal before its gain, for the level meter under its row. */
+  analysers: ReadonlyMap<string, AnalyserNode>;
 }
 
 interface RowProps {
@@ -18,9 +22,45 @@ interface RowProps {
   color: string;
   onMix: Props["onMix"];
   onAdjust: Props["onAdjust"];
+  analyser: AnalyserNode | undefined;
 }
 
-function LayerRow({ layer, project, color, onMix, onAdjust }: RowProps) {
+/** -60 dBFS to full scale across the row. */
+const METER_FLOOR_DB = -60;
+
+/** The layer's level at its slider gain while it plays, as a thin bar along the bottom of its row. */
+function LevelMeter({
+  analyser,
+  gainDb,
+  color,
+  heard,
+}: {
+  analyser: AnalyserNode | undefined;
+  gainDb: number;
+  color: string;
+  heard: boolean;
+}) {
+  const bar = useRef<HTMLDivElement>(null);
+  const samples = useRef(new Float32Array(0));
+  const style = useMemo(() => ({ backgroundColor: color, opacity: heard ? 0.9 : 0.3 }), [color, heard]);
+  useFrame(() => {
+    const el = bar.current;
+    if (!el || !analyser) return;
+    if (samples.current.length !== analyser.fftSize) samples.current = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(samples.current);
+    let sum = 0;
+    for (const v of samples.current) sum += v * v;
+    const db = 10 * Math.log10(sum / samples.current.length + 1e-12) + gainDb;
+    el.style.width = `${Math.max(0, Math.min(100, (1 - db / METER_FLOOR_DB) * 100))}%`;
+  });
+  return (
+    <div className="pointer-events-none absolute inset-x-4 bottom-0 h-0.5" aria-hidden="true">
+      <div ref={bar} style={style} className="h-full w-0 rounded-full" />
+    </div>
+  );
+}
+
+function LayerRow({ layer, project, color, onMix, onAdjust, analyser }: RowProps) {
   const { mix } = project;
   const muted = mix.muted.includes(layer.id);
   const solo = mix.solo === layer.id;
@@ -29,7 +69,7 @@ function LayerRow({ layer, project, color, onMix, onAdjust }: RowProps) {
   const slider = useMemo(() => ({ accentColor: color }), [color]);
   return (
     <li
-      className="flex items-center gap-2 py-1 pr-2 pl-4 text-sm pointer-coarse:py-0"
+      className="relative flex items-center gap-2 py-1 pr-2 pl-4 text-sm pointer-coarse:py-0"
       data-testid={`layer-${layer.label.toLowerCase()}`}
     >
       <svg viewBox="0 0 10 10" className="size-2.5 shrink-0" aria-hidden="true">
@@ -63,9 +103,9 @@ function LayerRow({ layer, project, color, onMix, onAdjust }: RowProps) {
         style={slider}
         className="w-20 sm:w-24"
       />
-      <span className="w-10 text-right font-mono text-xs text-dim tabular-nums">
+      <span className="w-14 text-right font-mono text-xs whitespace-nowrap text-dim tabular-nums">
         {db > 0 ? "+" : ""}
-        {db.toFixed(0)}
+        {db.toFixed(0)} dB
       </span>
       <button
         type="button"
@@ -90,12 +130,18 @@ function LayerRow({ layer, project, color, onMix, onAdjust }: RowProps) {
       >
         S
       </button>
+      <LevelMeter
+        analyser={analyser}
+        gainDb={db}
+        color={color}
+        heard={solo || (!muted && project.mix.solo === null)}
+      />
     </li>
   );
 }
 
 /** Layers grouped under the op that made them, newest last. */
-export function LayersPanel({ project, colors, onMix, onAdjust, onUndo, busy }: Props) {
+export function LayersPanel({ project, colors, onMix, onAdjust, onUndo, busy, analysers }: Props) {
   const rate = project.source.sampleRate;
   const source = project.layers.find((l) => l.id === SOURCE_LAYER);
   const last = project.ops.at(-1);
@@ -108,10 +154,10 @@ export function LayersPanel({ project, colors, onMix, onAdjust, onUndo, busy }: 
           type="button"
           aria-pressed={project.mix.ab === "input"}
           onClick={() => onMix((m) => ({ ...m, ab: m.ab === "input" ? "mix" : "input" }))}
-          className="ml-auto rounded px-2 py-0.5 text-dim aria-pressed:bg-accent aria-pressed:text-ink"
+          className="ml-auto rounded border border-edge px-2 py-0.5 text-dim aria-pressed:border-transparent aria-pressed:bg-accent aria-pressed:text-ink"
           data-testid="ab"
         >
-          Hear input
+          Compare with source
         </button>
       </div>
       <ul className="min-h-0 flex-1 overflow-y-auto">
@@ -122,15 +168,14 @@ export function LayersPanel({ project, colors, onMix, onAdjust, onUndo, busy }: 
             color={color(source.id)}
             onMix={onMix}
             onAdjust={onAdjust}
+            analyser={analysers.get(source.id)}
           />
         ) : null}
         {project.ops.map((op) => (
           <li key={op.id}>
             <div className="flex items-center gap-2 px-2 pt-1.5 text-xs text-dim">
               <span className="flex-1 truncate">
-                {{ denoise: "Denoise", separate: "Stems", speakers: "People", extract: "Extract" }[op.kind]}{" "}
-                of {project.layers.find((l) => l.id === op.input)?.label ?? "a removed layer"} ·{" "}
-                {formatTime(op.range.start / rate)}–{formatTime(op.range.end / rate)}
+                {opTitle(project, op)} · {formatTime(op.range.start / rate)}–{formatTime(op.range.end / rate)}
               </span>
               {op === last ? (
                 <button
@@ -154,6 +199,7 @@ export function LayersPanel({ project, colors, onMix, onAdjust, onUndo, busy }: 
                     color={color(l.id)}
                     onMix={onMix}
                     onAdjust={onAdjust}
+                    analyser={analysers.get(l.id)}
                   />
                 ))}
             </ul>

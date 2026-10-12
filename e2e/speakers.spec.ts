@@ -51,7 +51,7 @@ test("separates a two-person conversation into a layer per person", async ({ pag
   const wall = (Date.now() - t0) / 1000;
   console.log(JSON.stringify({ seconds, wall, realTimeFactor: wall / seconds }));
   await expectPeople(page);
-  await expect(page.getByTestId("colours")).toHaveText("Speaker colours");
+  await expect(page.getByTestId("colours")).toHaveAttribute("aria-pressed", "true");
 });
 
 test("reopens the project after a reload and resumes from the saved crosstalk", async ({ page }) => {

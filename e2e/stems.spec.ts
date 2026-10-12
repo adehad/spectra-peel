@@ -27,7 +27,7 @@ async function startStems(page: Page, best: string[], seconds: number) {
 async function expectStems(page: Page) {
   await expect(page.getByRole("alert")).toHaveCount(0);
   for (const stem of [...STEMS, "rest"]) await expect(page.getByTestId(`layer-${stem}`)).toHaveCount(1);
-  await expect(page.getByTestId("colours")).toHaveText("Stem colours");
+  await expect(page.getByTestId("colours")).toHaveAttribute("aria-pressed", "true");
 }
 
 /** Separates a synthetic clip with `best` from specialists and logs the real-time factor. */

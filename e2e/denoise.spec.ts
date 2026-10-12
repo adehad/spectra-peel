@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { syntheticWav } from "./fixtures";
+import { denoise, syntheticWav } from "./fixtures";
 
 test("denoises the whole file, then a selection, and undoes it", async ({ page }) => {
   test.setTimeout(180_000);
@@ -12,6 +12,7 @@ test("denoises the whole file, then a selection, and undoes it", async ({ page }
   await expect(page.getByTestId("project-name")).toHaveText("hiss", { timeout: 60_000 });
 
   await page.getByTestId("denoise").click();
+  await page.getByTestId("denoise-run").click();
   await expect(page.getByTestId("job")).toBeVisible();
   await expect(page.getByTestId("job")).toBeHidden({ timeout: 120_000 });
   await expect(page.getByTestId("layer-denoised")).toHaveCount(1);
@@ -27,8 +28,7 @@ test("denoises the whole file, then a selection, and undoes it", async ({ page }
   await page.mouse.up();
   await page.keyboard.up("Shift");
   await expect(page.getByTestId("denoise")).toHaveText("Denoise selection");
-  await page.getByTestId("denoise").click();
-  await expect(page.getByTestId("job")).toBeHidden({ timeout: 120_000 });
+  await denoise(page);
   await expect(page.getByTestId("layer-denoised")).toHaveCount(2);
 
   await page.getByTestId("play").click();

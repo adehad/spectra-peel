@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
-import { syntheticWav } from "./fixtures";
+import { denoise, syntheticWav } from "./fixtures";
 
 function probeSeconds(path: string): number | undefined {
   try {
@@ -26,8 +26,7 @@ test("exports the mix in every supported format", async ({ page }, info) => {
     .getByTestId("import")
     .setInputFiles({ name: "mix.wav", mimeType: "audio/wav", buffer: syntheticWav(8) });
   await expect(page.getByTestId("project-name")).toHaveText("mix", { timeout: 60_000 });
-  await page.getByTestId("denoise").click();
-  await expect(page.getByTestId("job")).toBeHidden({ timeout: 120_000 });
+  await denoise(page);
 
   await page.getByTestId("export").click();
   for (const format of ["wav", "flac", "m4a", "opus"] as const) {
