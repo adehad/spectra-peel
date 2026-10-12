@@ -2,13 +2,22 @@ import { deserializePeaks, type PeaksPyramid } from "@spectra-peel/engine";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Player } from "../audio/player";
 import { useJobs } from "../jobs";
-import { FAST_STEMS, SPECIALISTS } from "../models";
-import { applyDenoise, applySeparate, planDenoise, planSeparate, undoLast } from "../project/ops";
+import { FAST_STEMS, SPEAKER_MODELS, SPECIALISTS } from "../models";
+import {
+  applyDenoise,
+  applySeparate,
+  applySpeakers,
+  planDenoise,
+  planSeparate,
+  planSpeakers,
+  undoLast,
+} from "../project/ops";
 import { SOURCE_LAYER, layerGains, type Layer, type Mix, type Op, type Project } from "../project/schema";
 import { paths, projectDir, readBytes, removeFile, writeProject } from "../storage/opfs";
 import { modelStatus } from "../storage/models";
-import type { DenoiseRequest, SeparateRequest } from "../workers/protocol";
+import type { DenoiseRequest, SeparateRequest, SpeakersRequest } from "../workers/protocol";
 import { ModelsPanel } from "./ModelsPanel";
+import { SpeakersConfirm } from "./SpeakersConfirm";
 import { StemsConfirm, type StemsReady } from "./StemsConfirm";
 import { ExportPanel } from "./ExportPanel";
 import { formatTime } from "./format";
@@ -33,7 +42,7 @@ function viewedOp(project: Project, base: string): Op | undefined {
 /**
  * Layers drawn over `base`. When `base` was split by an op, its parts always scale it by the gain they
  * play at, so muting a stem takes its energy out of the picture. A slider being moved colours just its
- * layer. Otherwise, with colours on, a denoise colours what it removed and a separation each stem.
+ * layer. Otherwise, with colours on, a denoise colours what it removed and a separation each part.
  * Layers that are not parts of the base are coloured at their slider gain, muted or not.
  */
 function tintsFor(project: Project, base: string, focus: string | null, colours: boolean): Tint[] {
@@ -45,7 +54,7 @@ function tintsFor(project: Project, base: string, focus: string | null, colours:
     coloured = op.outputs.filter(
       (id) =>
         id !== base &&
-        (op.kind === "separate" || project.layers.find((l) => l.id === id)?.data.kind === "residual"),
+        (op.kind !== "denoise" || project.layers.find((l) => l.id === id)?.data.kind === "residual"),
     );
   const playing = layerGains({ ...project, mix: { ...project.mix, ab: "mix" } });
   return [...new Set([...parts, ...coloured])].flatMap((id) => {
@@ -181,11 +190,12 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   const [selectMode, setSelectMode] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [stemsReady, setStemsReady] = useState<StemsReady | null>(null);
+  const [askingSpeakers, setAskingSpeakers] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const lastOp = project.ops.at(-1);
-  // Stems read best over the mix they came from; a denoise over its result, tinted by what it removed.
+  // Parts read best over the mix they came from; a denoise over its result, tinted by what it removed.
   const [base, setBase] = useState(
-    (lastOp?.kind === "separate" ? lastOp.input : lastOp?.outputs[0]) ?? SOURCE_LAYER,
+    (lastOp && lastOp.kind !== "denoise" ? lastOp.input : lastOp?.outputs[0]) ?? SOURCE_LAYER,
   );
   const [colours, setColours] = useState(true);
   const [focus, setFocus] = useState<string | null>(null);
@@ -246,7 +256,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     id: string,
     layers: Layer[],
     worker: Worker,
-    request: DenoiseRequest | SeparateRequest,
+    request: DenoiseRequest | SeparateRequest | SpeakersRequest,
     finish: (p: Project) => Project,
   ) => {
     setNotice(undefined);
@@ -336,6 +346,25 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     runJob(plan.op.id, [...plan.stems, plan.rest], worker, req, (p) => applySeparate(p, plan));
   };
 
+  const askSpeakers = () => {
+    Promise.all(SPEAKER_MODELS.map((id) => modelStatus(id))).then(
+      (status) => {
+        if (status.every((m) => m.ready)) setAskingSpeakers(true);
+        else setModelsOpen(true);
+        return undefined;
+      },
+      (e: unknown) => setNotice(String(e)),
+    );
+  };
+
+  const startSpeakers = (count: number, useGpu: boolean) => {
+    setAskingSpeakers(false);
+    const plan = planSpeakers(project, base, count);
+    const worker = new Worker(new URL("../workers/speakers.worker.ts", import.meta.url), { type: "module" });
+    const req: SpeakersRequest = { project, op: plan.op, people: plan.people, rest: plan.rest, useGpu };
+    runJob(plan.op.id, [...plan.people, plan.rest], worker, req, (p) => applySpeakers(p, plan));
+  };
+
   const cancelJob = () => {
     if (!job) return;
     job.worker.terminate();
@@ -421,7 +450,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
             className="rounded px-2 py-0.5 text-dim aria-pressed:bg-edge aria-pressed:text-zinc-100"
             data-testid="colours"
           >
-            {op.kind === "separate" ? "Stem colours" : "Removed energy"}
+            {{ denoise: "Removed energy", separate: "Stem colours", speakers: "Speaker colours" }[op.kind]}
           </button>
         ) : null}
         <span className="ml-auto font-mono text-dim tabular-nums">
@@ -528,6 +557,15 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         </button>
         <button
           type="button"
+          disabled={job !== undefined}
+          onClick={askSpeakers}
+          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40"
+          data-testid="speakers"
+        >
+          People
+        </button>
+        <button
+          type="button"
           onClick={() => setExporting(true)}
           className="rounded bg-edge px-3 py-1 text-sm"
           data-testid="export"
@@ -572,6 +610,14 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
             setModelsOpen(true);
           }}
           onClose={() => setStemsReady(null)}
+        />
+      ) : null}
+      {askingSpeakers ? (
+        <SpeakersConfirm
+          project={project}
+          input={project.layers.find((l) => l.id === base)?.label ?? "Source"}
+          onRun={startSpeakers}
+          onClose={() => setAskingSpeakers(false)}
         />
       ) : null}
       {modelsOpen ? <ModelsPanel onClose={() => setModelsOpen(false)} /> : null}

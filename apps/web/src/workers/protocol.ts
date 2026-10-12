@@ -80,3 +80,14 @@ export type SeparateMessage =
   | { type: "progress"; fraction: number; stage: string; etaSeconds: number | null }
   | { type: "done"; device: string; realTimeFactor: number }
   | { type: "error"; message: string };
+
+export interface SpeakersRequest {
+  project: Project;
+  op: Op;
+  /** One FLAC layer per person, then the residual whose tiles to write. */
+  people: Layer[];
+  rest: Layer;
+  useGpu: boolean;
+}
+
+export type SpeakersMessage = SeparateMessage;
