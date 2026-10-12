@@ -53,7 +53,7 @@ export function ExtractConfirm({ project, input, onRun, onClose }: Props) {
           </label>
         ))}
         <p className="basis-full text-xs text-dim">
-          Speech is the most reliable. The model hears up to 16 kHz, so anything higher stays in Rest.
+          Speech is the most reliable. The model hears up to 16 kHz; above that the layer gets a share of the original by how much of the top of its range it owns.
         </p>
       </dd>
     </RunConfirm>

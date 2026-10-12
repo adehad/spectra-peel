@@ -104,3 +104,6 @@ export interface ExtractRequest {
 }
 
 export type ExtractMessage = SeparateMessage;
+
+/** The layer Extract's model pass writes before the high band is filled in, by the op's id. */
+export const extractRawLayer = (op: string) => `${op}-raw`;
