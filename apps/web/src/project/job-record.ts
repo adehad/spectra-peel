@@ -28,6 +28,17 @@ export const JobRecordSchema = z.discriminatedUnion("kind", [
       useGpu: z.boolean(),
     }),
   }),
+  z.object({
+    kind: z.literal("extract"),
+    request: z.object({
+      project: ProjectSchema,
+      op: OpSchema,
+      target: LayerSchema,
+      rest: LayerSchema,
+      prompt: z.string(),
+      useGpu: z.boolean(),
+    }),
+  }),
 ]);
 
 export type JobRecord = z.infer<typeof JobRecordSchema>;
@@ -36,11 +47,13 @@ export const JOB_TITLES: Record<JobRecord["kind"], string> = {
   denoise: "Denoising",
   separate: "Separating stems",
   speakers: "Separating people",
+  extract: "Extracting",
 };
 
 /** The layers the job writes, in the order its op lists them. */
 export function jobLayers(record: JobRecord): Layer[] {
   if (record.kind === "denoise") return [record.request.output, record.request.removed];
   if (record.kind === "separate") return [...record.request.stems, record.request.rest];
+  if (record.kind === "extract") return [record.request.target, record.request.rest];
   return [...record.request.people, record.request.rest];
 }

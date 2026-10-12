@@ -19,6 +19,7 @@ export const MODEL_IDS = [
   "speaker-segmentation",
   "speaker-embedding",
   "speaker-separation",
+  "audiosep-base",
 ] as const;
 export type ModelId = (typeof MODEL_IDS)[number];
 
@@ -42,6 +43,10 @@ export const SPEAKER_MODELS: readonly ModelId[] = [
   "speaker-embedding",
   "speaker-separation",
 ];
+
+/** Labels of the sounds Extract can pull out, each with a CLAP embedding in extract-prompts.json. */
+export const EXTRACT_PROMPTS = ["Speech", "Music", "Piano", "Strings", "Dog barking"] as const;
+export type ExtractPrompt = (typeof EXTRACT_PROMPTS)[number];
 
 /** The models a separation runs in turn: the fast model for any stems not in `best`, then a specialist per stem in it. */
 export function stemModels(best: readonly number[]): ModelId[] {
@@ -135,5 +140,16 @@ export const MODELS: Record<ModelId, ModelSpec> = {
     bytes: 59_080_388,
     bundled: false,
     license: "Apache-2.0",
+  },
+  "audiosep-base": {
+    label: "AudioSep",
+    purpose: "Pulls one kind of sound out by name",
+    // reference/audiosep/export_audiosep.py on the Audio-AGI/AudioSep Space's base checkpoint at
+    // 0807a713283035d8b0d0628f1b8e3d6580459f7b. Not hosted yet: add it from a file.
+    url: null,
+    sha256: "514db8ab822faa71d2eefcd3420b16bcbc40008d67e1fdf4e13ef42b77c13013",
+    bytes: 136_908_283,
+    bundled: false,
+    license: "MIT",
   },
 };

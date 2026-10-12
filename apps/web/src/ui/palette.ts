@@ -38,6 +38,11 @@ const OKLCH: Record<string, readonly [number, number, number]> = {
   "Person 1": [0.8, 0.14, 75],
   "Person 2": [0.72, 0.16, 330],
   "Person 3": [0.8, 0.14, 140],
+  Speech: [0.82, 0.13, 195],
+  Music: [0.78, 0.15, 310],
+  Piano: [0.85, 0.1, 110],
+  Strings: [0.75, 0.15, 15],
+  "Dog barking": [0.8, 0.15, 55],
 };
 
 /** The colour a layer is drawn in everywhere: its legend dot, its meter and its spectrogram tint. */

@@ -27,7 +27,7 @@ const ModelRef = z.object({ id: z.string(), sha256: z.string() });
 
 export const OpSchema = z.object({
   id: z.string(),
-  kind: z.enum(["denoise", "separate", "speakers"]),
+  kind: z.enum(["denoise", "separate", "speakers", "extract"]),
   input: z.string(),
   /** The selection the user asked for, in source samples, before padding and crossfades. */
   range: z.object({ start: Samples, end: Samples }),

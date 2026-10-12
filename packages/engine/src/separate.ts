@@ -9,6 +9,18 @@ export const DEMUCS = Object.freeze({
 });
 
 /**
+ * AudioSep's separator as reference/audiosep exports it: 32 kHz mono, one 5.11 s chunk a run, steered
+ * by a 512-d CLAP text embedding. A 40% overlap fades over about 2 s, close to upstream's 1 s discarded
+ * at each chunk edge, since the model is weakest near the edges.
+ */
+export const AUDIOSEP = Object.freeze({
+  sampleRate: 32_000,
+  segment: 320 * (512 - 1),
+  overlap: 0.4,
+  embedding: 512,
+});
+
+/**
  * A stem separation graph. `mix` is planar stereo [2, segment]; the result is planar
  * [sources, 2, segment].
  */

@@ -3,15 +3,17 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { keepAlive } from "../audio/keep-alive";
 import { Player } from "../audio/player";
 import { useJobs } from "../jobs";
-import { FAST_STEMS, SPEAKER_MODELS, SPECIALISTS } from "../models";
+import { FAST_STEMS, SPEAKER_MODELS, SPECIALISTS, type ExtractPrompt } from "../models";
 import { JOB_TITLES, jobLayers, type JobRecord } from "../project/job-record";
 import {
   applyDenoise,
   applySeparate,
   applySpeakers,
+  applyExtract,
   planDenoise,
   planSeparate,
   planSpeakers,
+  planExtract,
   undoLast,
 } from "../project/ops";
 import { SOURCE_LAYER, layerGains, type Mix, type Op, type Project } from "../project/schema";
@@ -26,6 +28,7 @@ import {
 } from "../storage/opfs";
 import { modelStatus } from "../storage/models";
 import { ModelsPanel, type ModelsNeed } from "./ModelsPanel";
+import { ExtractConfirm } from "./ExtractConfirm";
 import { SpeakersConfirm } from "./SpeakersConfirm";
 import { StemsConfirm, type StemsReady } from "./StemsConfirm";
 import { ExportPanel } from "./ExportPanel";
@@ -115,13 +118,16 @@ function jobWorker(kind: JobRecord["kind"]): Worker {
     return new Worker(new URL("../workers/denoise.worker.ts", import.meta.url), { type: "module" });
   if (kind === "separate")
     return new Worker(new URL("../workers/separate.worker.ts", import.meta.url), { type: "module" });
-  return new Worker(new URL("../workers/speakers.worker.ts", import.meta.url), { type: "module" });
+  if (kind === "speakers")
+    return new Worker(new URL("../workers/speakers.worker.ts", import.meta.url), { type: "module" });
+  return new Worker(new URL("../workers/extract.worker.ts", import.meta.url), { type: "module" });
 }
 
 function applyJob(project: Project, record: JobRecord): Project {
   if (record.kind === "denoise") return applyDenoise(project, record.request);
   if (record.kind === "separate") return applySeparate(project, record.request);
-  return applySpeakers(project, record.request);
+  if (record.kind === "speakers") return applySpeakers(project, record.request);
+  return applyExtract(project, record.request);
 }
 
 /** Keeps the screen on while `active`, taking the lock again whenever the page comes back into view. */
@@ -244,6 +250,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   const [exporting, setExporting] = useState(false);
   const [stemsReady, setStemsReady] = useState<StemsReady | null>(null);
   const [askingSpeakers, setAskingSpeakers] = useState(false);
+  const [askingExtract, setAskingExtract] = useState(false);
   const [modelsNeed, setModelsNeed] = useState<ModelsNeed | null>(null);
   const lastOp = project.ops.at(-1);
   // Parts read best over the mix they came from; a denoise over its result, tinted by what it removed.
@@ -435,6 +442,32 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     runJob({ kind: "speakers", request: { project, ...planSpeakers(project, base, count), useGpu } });
   };
 
+  const askExtract = () => {
+    modelStatus("audiosep-base").then(
+      (status) => {
+        if (status.ready) setAskingExtract(true);
+        else
+          setModelsNeed({
+            ids: ["audiosep-base"],
+            title: "Add the Extract model",
+            about:
+              "Extract needs AudioSep on this device. It is not hosted yet, so add its .onnx file, then continue.",
+            onContinue: () => {
+              setModelsNeed(null);
+              setAskingExtract(true);
+            },
+          });
+        return undefined;
+      },
+      (e: unknown) => setNotice(String(e)),
+    );
+  };
+
+  const startExtract = (prompt: ExtractPrompt, useGpu: boolean) => {
+    setAskingExtract(false);
+    runJob({ kind: "extract", request: { project, ...planExtract(project, base, prompt), prompt, useGpu } });
+  };
+
   const cancelJob = () => {
     if (!job) return;
     job.worker.terminate();
@@ -540,7 +573,14 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
             className="rounded px-2 py-0.5 text-dim aria-pressed:bg-edge aria-pressed:text-zinc-100"
             data-testid="colours"
           >
-            {{ denoise: "Removed energy", separate: "Stem colours", speakers: "Speaker colours" }[op.kind]}
+            {
+              {
+                denoise: "Removed energy",
+                separate: "Stem colours",
+                speakers: "Speaker colours",
+                extract: "Layer colours",
+              }[op.kind]
+            }
           </button>
         ) : null}
         <span className="ml-auto font-mono text-dim tabular-nums">
@@ -685,6 +725,15 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         </button>
         <button
           type="button"
+          disabled={busy}
+          onClick={askExtract}
+          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40 pointer-coarse:order-last"
+          data-testid="extract"
+        >
+          Extract
+        </button>
+        <button
+          type="button"
           aria-pressed={follow}
           onClick={() => setFollow(!follow)}
           className="rounded px-2 py-1 text-sm text-dim aria-pressed:bg-edge aria-pressed:text-zinc-100"
@@ -739,6 +788,14 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           input={project.layers.find((l) => l.id === base)?.label ?? "Source"}
           onRun={startSpeakers}
           onClose={() => setAskingSpeakers(false)}
+        />
+      ) : null}
+      {askingExtract ? (
+        <ExtractConfirm
+          project={project}
+          input={project.layers.find((l) => l.id === base)?.label ?? "Source"}
+          onRun={startExtract}
+          onClose={() => setAskingExtract(false)}
         />
       ) : null}
       {modelsNeed ? <ModelsPanel need={modelsNeed} onClose={() => setModelsNeed(null)} /> : null}
