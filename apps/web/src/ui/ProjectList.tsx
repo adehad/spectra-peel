@@ -150,12 +150,21 @@ export function ProjectList({ onOpen }: Props) {
         ) : null}
         <ul className="divide-y divide-edge">
           {listing?.projects.map(({ project, bytes }) => (
-            <li key={project.id} className="flex items-center gap-3 py-2" data-testid="project-row">
-              <button type="button" onClick={() => onOpen(project)} className="min-w-0 flex-1 text-left">
-                <span className="block truncate">{project.name}</span>
-                <span className="block text-xs text-dim tabular-nums">
-                  {formatTime(project.source.frames / project.source.sampleRate)} ·{" "}
-                  {(project.source.sampleRate / 1000).toFixed(1)} kHz · {formatBytes(bytes)}
+            <li key={project.id} className="flex items-center gap-3 py-1" data-testid="project-row">
+              <button
+                type="button"
+                onClick={() => onOpen(project)}
+                className="-mx-2 flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left hover:bg-edge/60 active:bg-edge"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{project.name}</span>
+                  <span className="block text-xs text-dim tabular-nums">
+                    {formatTime(project.source.frames / project.source.sampleRate)} ·{" "}
+                    {(project.source.sampleRate / 1000).toFixed(1)} kHz · {formatBytes(bytes)}
+                  </span>
+                </span>
+                <span className="text-dim" aria-hidden="true">
+                  ›
                 </span>
               </button>
               {confirm === project.id ? (
