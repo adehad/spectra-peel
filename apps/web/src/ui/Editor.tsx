@@ -1,5 +1,6 @@
 import { deserializePeaks, type PeaksPyramid } from "@spectra-peel/engine";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { keepAlive } from "../audio/keep-alive";
 import { Player } from "../audio/player";
 import { useJobs } from "../jobs";
 import { FAST_STEMS, SPEAKER_MODELS, SPECIALISTS } from "../models";
@@ -314,19 +315,24 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   }, [dir]);
 
   /**
-   * Runs an op in a worker and adds its layers when it finishes. The saved record lets a reload offer
-   * to resume the job.
+   * Runs an op in a worker and adds its layers when it finishes. Call it from a user gesture, so the
+   * keep-alive may start playing. The saved record lets a reload offer to resume the job.
    */
   const runJob = (record: JobRecord) => {
     const id = record.request.op.id;
+    const title = JOB_TITLES[record.kind];
     const files = jobFiles(record);
     const worker = jobWorker(record.kind);
     setNotice(undefined);
     setJob({ id, files, worker, fraction: 0, stage: "Starting", etaSeconds: null });
     useJobs.getState().start(id);
+    keepAlive.start(title, project.name);
+    const t0 = performance.now();
+    let shown = -1;
     const end = (m: JobMessage) => {
       worker.terminate();
       useJobs.getState().end(id);
+      keepAlive.stop();
       if (m.type === "error") {
         setJob(undefined);
         setNotice(`Failed: ${m.message}`);
@@ -355,6 +361,12 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
       setJob((j) =>
         j ? { ...j, fraction: m.fraction, stage: m.stage, etaSeconds: m.etaSeconds ?? null } : j,
       );
+      const percent = Math.round(m.fraction * 100);
+      if (percent !== shown) {
+        const time = { elapsedSeconds: (performance.now() - t0) / 1000, etaSeconds: m.etaSeconds ?? null };
+        keepAlive.update(`${title} · ${percent}%`, project.name, time);
+      }
+      shown = percent;
     });
     writeJobRecord(dir, record).then(
       () => worker.postMessage(record.request),
@@ -406,6 +418,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   const cancelJob = () => {
     if (!job) return;
     job.worker.terminate();
+    keepAlive.stop();
     useJobs.getState().end(job.id);
     setJob(undefined);
     // Terminating releases the worker's handles shortly after, not synchronously.
