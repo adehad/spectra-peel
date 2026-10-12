@@ -69,7 +69,11 @@ GPU time for one chunk by kernel, rewritten model:
 
 ## Phone
 
-Not run yet. Target is a Samsung Galaxy S25 (Snapdragon 8 Elite, Adreno 830, 12 GB). Needs the deployed `/spike/` page and its Chrome version.
+The `/spike/` page has not been run on a phone. The app has, on a Google Pixel 10a in Chrome over the LAN build, on 2026-10-12:
+
+- Extract, Speech, on the GPU: about 9 minutes for an 11-minute recording, about 0.8x real time. The AudioSep spike's estimate was 0.5-1.6x.
+- With the page in the background, the silent media loop kept the job running for some minutes, and the media notification showed the percentage and a moving progress bar.
+- After the page was closed mid-job, reopening it landed on the project with the Resume banner, and the resumed job finished.
 
 ## Import, desktop, 2026-10-11
 
@@ -104,3 +108,7 @@ Best quality, 20 s on the NVIDIA card including model loads (`SPECTRA_FT_MODELS=
 The exported layers score the same as the spike's Python pipeline where people overlap. On solo speech they differ only in frames where the segmentation windows split their vote evenly between two voices. On the spike's 4-minute sets the reference pipeline (`reference/speakers.py`, which the engine matches frame for frame) scores 6.0, 8.6 and 1.1 dB global SI-SDR on long2_clean, long3_clean and long2_noisyreverb, as the spike did. Breaking those ties toward whoever spoke in the previous frame moved the scores by under 0.4 dB either way, so ties go to the voice heard first.
 
 High band: crosstalk from TIGER has nothing above 8 kHz, so around each run of separated pieces every person and Rest get a share of the input's band above 7.52 kHz, set per 10 ms frame by their share of 4-7.5 kHz power ("hybrid aw" in the full-band spike). On the full-band spike's 150 s, 48 kHz VCTK conversation, high-band SDR where both people talk went from 8.8 and 3.4 dB to 9.6 and 7.3 dB, and over the whole file from 19.4 and 17.8 to 20.0 and 20.1 dB; full-band SI-SDR stayed at 20.6 and 17.1 dB. Segmentation found little of that conversation's crosstalk, so most of it was copied rather than separated, and the gain is small. Writing took no longer.
+
+## Extract, desktop, 2026-10-12
+
+`SPECTRA_EXTRACT_MODEL=... SPECTRA_EXTRACT_AUDIO=... bunx playwright test e2e/extract.spec.ts` on 30 s of the AudioSep spike's speech and piano, level-matched and resampled to 48 kHz: 49 s on 8 wasm threads including adding and loading the model, 1.6x real time. The exported Speech layer scores 15.1 dB SI-SDR improvement and Rest 15.1 dB against the piano, as the spike's Python run of the same checkpoint did, so chunking with a 40% crossfade in place of upstream's discarded edges costs nothing measurable here.
