@@ -13,14 +13,17 @@ export const BAND_FILL = Object.freeze({
 /**
  * Fills the band a lower-rate model could not produce. Below 0.94 x `modelRate` / 2 every layer is
  * left as it is. Above it, each layer becomes a share of the mixture (the sum of all layers), frame
- * by frame: the layer's share of power in the octave below the cut, weighted by the mixture's power
- * there. Shares sum to one, so the layers still sum to the mixture. `layers` must include the
- * residual, or the high band of anything the model left out goes to the separated layers.
+ * by frame: the layer's share of power in the `octaves` below the model's Nyquist, weighted by the
+ * mixture's power there. Shares sum to one, so the layers still sum to the mixture. `layers` must
+ * include the residual, or the high band of anything the model left out goes to the separated
+ * layers. A narrower reference band follows sources that fall off faster than the background: over
+ * pink noise, a third of an octave kept AudioSep's speech layer from taking the noise's high band.
  */
 export function fillHighBand(
   layers: readonly Float32Array[],
   rate: number,
   modelRate: number,
+  octaves = 1,
 ): Float32Array[] {
   const { window: W, hopSeconds, floor, cut } = BAND_FILL;
   const n = layers[0]?.length ?? 0;
@@ -30,7 +33,7 @@ export function fillHighBand(
   const bins = half + 1;
   const binHz = rate / W;
   const cutBin = Math.min(bins, Math.ceil((cut * modelRate) / 2 / binHz));
-  const topBin = Math.ceil(modelRate / 4 / binHz);
+  const topBin = Math.ceil(modelRate / 2 / 2 ** octaves / binHz);
   const win = Float64Array.from({ length: W }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / W));
   const fft = new FFT(W);
   const frames = Math.floor(n / hop) + 1;

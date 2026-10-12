@@ -74,4 +74,17 @@ describe("fillHighBand", () => {
     expect(after / full).toBeGreaterThan(0.8);
     expect(after / full).toBeLessThan(0.95);
   });
+
+  it("gives less of the high band to a layer that fades before the cut when the reference is narrower", () => {
+    const down = new Resampler(RATE, 10_000);
+    const up = new Resampler(10_000, RATE);
+    const low = Float32Array.from([...down.push(noise(3, 0.5)), ...down.finish()]);
+    const dull = Float32Array.from([...up.push(low), ...up.finish()]).subarray(0, N);
+    const mix = noise(4, 0.1).map((v, i) => v + (dull[i] ?? 0));
+    const rest = mix.map((v, i) => v - (dull[i] ?? 0));
+    const [octave] = fillHighBand([dull, rest], RATE, 16_000);
+    const [third] = fillHighBand([dull, rest], RATE, 16_000, 1 / 3);
+    const extra = (f: Float32Array | undefined) => highEnergy(f ?? dull) - highEnergy(dull);
+    expect(extra(third)).toBeLessThan(0.2 * extra(octave));
+  });
 });
