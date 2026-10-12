@@ -7,6 +7,14 @@ export class Xorshift32 {
     this.state = seed >>> 0 || 1;
   }
 
+  snapshot(): number {
+    return this.state;
+  }
+
+  restore(state: number): void {
+    this.state = state;
+  }
+
   /** Uniform in [0, 1). */
   next(): number {
     let x = this.state;

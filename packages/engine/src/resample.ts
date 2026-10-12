@@ -17,6 +17,13 @@ export function besselI0(x: number): number {
   return sum;
 }
 
+export interface ResamplerState {
+  buffer: Float32Array;
+  bufferStart: number;
+  received: number;
+  produced: number;
+}
+
 /**
  * Streaming polyphase resampler with a Kaiser-windowed sinc. The filter is symmetric about each
  * output instant, so output sample n lines up with input time n * from / to with no added delay.
@@ -59,6 +66,19 @@ export class Resampler {
         this.table[p * this.taps + j] = cutoff * sinc * window;
       }
     }
+  }
+
+  /** Where the stream is, so a resampler built with the same rates can carry on from here. */
+  snapshot(): ResamplerState {
+    const { bufferStart, received, produced } = this;
+    return { buffer: this.buffer.slice(), bufferStart, received, produced };
+  }
+
+  restore(state: ResamplerState): void {
+    this.buffer = state.buffer.slice();
+    this.bufferStart = state.bufferStart;
+    this.received = state.received;
+    this.produced = state.produced;
   }
 
   /** Output samples for `inputSamples` of input, rounded up. */

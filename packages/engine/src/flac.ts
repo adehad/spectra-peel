@@ -60,6 +60,16 @@ export function readStreamInfo(bytes: Uint8Array): StreamInfo {
 }
 
 /** Collects PCM, emits encoded frames, and records each frame's byte offset in the finished file. */
+export interface FlacWriterState {
+  /** Byte offset of each frame written so far. */
+  index: Float64Array;
+  /** The samples of the frame being filled, per channel. */
+  block: Int32Array[];
+  frames: number;
+  samples: number;
+  offset: number;
+}
+
 export class FlacWriter {
   readonly index: number[] = [];
   private readonly block: Int32Array[];
@@ -72,6 +82,26 @@ export class FlacWriter {
   constructor(format: FlacFormat) {
     this.format = format;
     this.block = Array.from({ length: format.channels }, () => new Int32Array(FLAC_BLOCK));
+  }
+
+  snapshot(): FlacWriterState {
+    return {
+      index: Float64Array.from(this.index),
+      block: this.block.map((b) => b.slice(0, this.fill)),
+      frames: this.frames,
+      samples: this.samples,
+      offset: this.offset,
+    };
+  }
+
+  restore(state: FlacWriterState): void {
+    this.index.length = 0;
+    for (const v of state.index) this.index.push(v);
+    for (const [c, b] of state.block.entries()) this.block[c]?.set(b);
+    this.fill = state.block[0]?.length ?? 0;
+    this.frames = state.frames;
+    this.samples = state.samples;
+    this.offset = state.offset;
   }
 
   get totalSamples(): number {

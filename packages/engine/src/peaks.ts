@@ -8,12 +8,34 @@ export interface PeaksPyramid {
   levels: Float32Array[];
 }
 
+export interface PeaksState {
+  pairs: Float32Array;
+  min: number;
+  max: number;
+  fill: number;
+  total: number;
+}
+
 export class PeaksBuilder {
   private readonly pairs: number[] = [];
   private min = Infinity;
   private max = -Infinity;
   private fill = 0;
   private total = 0;
+
+  snapshot(): PeaksState {
+    const { min, max, fill, total } = this;
+    return { pairs: Float32Array.from(this.pairs), min, max, fill, total };
+  }
+
+  restore(state: PeaksState): void {
+    this.pairs.length = 0;
+    for (const v of state.pairs) this.pairs.push(v);
+    this.min = state.min;
+    this.max = state.max;
+    this.fill = state.fill;
+    this.total = state.total;
+  }
 
   push(channels: readonly Float32Array[]): void {
     const length = channels[0]?.length ?? 0;
