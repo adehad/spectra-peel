@@ -8,7 +8,7 @@ import { modelBytes } from "../storage/models";
 import { projectDir } from "../storage/opfs";
 import { loadJson, saveJson } from "./checkpoint";
 import { TileWriter, mono } from "./layer-writer";
-import { separatePass, type PassModel } from "./separate-pass";
+import { passCheckpoints, progressPoster, separatePass, type PassModel } from "./separate-pass";
 import { createSession } from "./ort-session";
 import type { SeparateMessage, SeparateRequest } from "./protocol";
 
@@ -82,22 +82,25 @@ async function separate(req: SeparateRequest): Promise<{ device: string; realTim
   let device = "";
   const resumed = PassesDone.safeParse(await loadJson(dir, op.id, "passes.json"));
   const skip = resumed.success ? resumed.data.done : 0;
+  const progress = progressPoster(post, t0);
 
   for (const [p, pass] of passes.entries()) {
     if (p < skip) continue;
     const what =
       pass.keep.length > 1 ? "Separating" : `${stems[pass.keep[0] ?? 0]?.label ?? "Stem"} at best quality`;
     const label = passes.length === 1 ? what : `${what} (${p + 1} of ${passes.length})`;
+    const checkpoints = await passCheckpoints(dir, op.id, `pass-${p}`);
+    const from = (p + (checkpoints.resume?.written ?? 0) / total) / passes.length;
     post({
       type: "progress",
-      fraction: p / passes.length,
+      fraction: from,
       stage: `${label}: loading model`,
       etaSeconds: null,
     });
     const created = await createSession(await modelBytes(pass.model), req.useGpu);
     device = created.device;
     const stage = `${label} on the ${device}`;
-    post({ type: "progress", fraction: p / passes.length, stage, etaSeconds: null });
+    post({ type: "progress", fraction: from, stage, etaSeconds: null });
     const everyStem = pass.keep.length === DEMUCS.sources.length;
     const restTiles = everyStem ? new TileWriter(dir, rest.id, project.source.sampleRate) : null;
     try {
@@ -108,17 +111,8 @@ async function separate(req: SeparateRequest): Promise<{ device: string; realTim
         overlap: DEMUCS.overlap,
       };
       const layers = pass.keep.flatMap((i) => stems[i] ?? []);
-      await separatePass(dir, project, op.input, model, layers, restTiles, (written) => {
-        const fraction = (p + written / total) / passes.length;
-        const elapsed = (performance.now() - t0) / 1000;
-        const ran = fraction - skip / passes.length;
-        post({
-          type: "progress",
-          fraction,
-          stage,
-          etaSeconds: ran > 0.02 ? (elapsed / ran) * (1 - fraction) : null,
-        });
-      });
+      const report = (written: number) => progress((p + written / total) / passes.length, stage);
+      await separatePass(dir, project, op.input, model, layers, restTiles, report, checkpoints);
     } finally {
       await created.session.release();
     }

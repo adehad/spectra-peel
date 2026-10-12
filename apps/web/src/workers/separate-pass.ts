@@ -1,8 +1,18 @@
-import { Resampler, SeparationStream, type SeparationModel } from "@spectra-peel/engine";
+import {
+  Resampler,
+  concatFloat32 as concat,
+  SeparationStream,
+  type ResamplerState,
+  type SeparationModel,
+  type SeparationState,
+  type SpectrogramState,
+} from "@spectra-peel/engine";
 import { LayerBlocks } from "../audio/layer-blocks";
 import { dependencies } from "../project/layers";
 import type { Layer, Project } from "../project/schema";
-import { LayerWriter, TileWriter, mono } from "./layer-writer";
+import { loadSnapshot, saveSnapshot } from "./checkpoint";
+import { LayerWriter, TileWriter, mono, type LayerWriterState } from "./layer-writer";
+import type { SeparateMessage } from "./protocol";
 
 /** A separation graph and the chunking it runs at. */
 export interface PassModel {
@@ -10,6 +20,76 @@ export interface PassModel {
   sampleRate: number;
   segment: number;
   overlap: number;
+}
+
+/** Everything a pass holds between input blocks, so a later run can carry on exactly. */
+export interface PassState {
+  /** The next input block to read. */
+  block: number;
+  written: number;
+  /** Per channel, input read but not yet matched by output. */
+  pendingInput: Float32Array[];
+  /** Per layer and channel, output not yet written. */
+  pendingStems: Float32Array[][];
+  up: ResamplerState[];
+  down: ResamplerState[][];
+  stream: SeparationState;
+  writers: LayerWriterState[];
+  restTiles: SpectrogramState | null;
+}
+
+export interface Checkpoints {
+  /** Where an earlier run of this pass stopped, or null to start from the beginning. */
+  resume: PassState | null;
+  save: (state: PassState) => Promise<void>;
+}
+
+/** Wall time between checkpoints: often enough to lose little, rare enough to cost little. */
+const CHECKPOINT_MS = 30_000;
+
+/** A snapshot from storage, checked only as far as telling it apart from something else entirely. */
+function isPassState(v: unknown): v is PassState {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    "block" in v &&
+    typeof v.block === "number" &&
+    "writers" in v &&
+    Array.isArray(v.writers) &&
+    "stream" in v
+  );
+}
+
+/** Checkpoints kept under `name` in the op's job folder. */
+export async function passCheckpoints(
+  dir: FileSystemDirectoryHandle,
+  op: string,
+  name: string,
+): Promise<Checkpoints> {
+  const saved = await loadSnapshot(dir, op, name);
+  return {
+    resume: isPassState(saved) ? saved : null,
+    save: (state) => saveSnapshot(dir, op, name, state),
+  };
+}
+
+/**
+ * Posts progress with a time estimate from the work this run has done, since a resumed job starts
+ * partway through and its time so far covers only the rest.
+ */
+export function progressPoster(post: (m: SeparateMessage) => void, t0: number) {
+  let start: number | null = null;
+  return (fraction: number, stage: string) => {
+    start ??= fraction;
+    const ran = fraction - start;
+    const elapsed = (performance.now() - t0) / 1000;
+    post({
+      type: "progress",
+      fraction,
+      stage,
+      etaSeconds: ran > 0.02 ? (elapsed / ran) * (1 - fraction) : null,
+    });
+  };
 }
 
 const queued = (parts: Float32Array[]) => parts.reduce((n, p) => n + p.length, 0);
@@ -41,15 +121,20 @@ export async function separatePass(
   layers: readonly Layer[],
   restTiles: TileWriter | null,
   onProgress: (written: number) => void,
+  checkpoints: Checkpoints | null = null,
 ): Promise<void> {
   const rate = project.source.sampleRate;
   const channels = project.source.channels;
   const total = project.source.frames;
+  const resume = checkpoints?.resume ?? null;
   const blocks = await LayerBlocks.open(dir, project, dependencies(project, input));
   const writers = await Promise.all(
-    layers.map((l) => {
+    layers.map((l, i) => {
       if (l.data.kind !== "flac") throw new Error("separated layers must be FLAC");
-      return LayerWriter.create(dir, l.id, l.data.path, l.data.index, rate, channels);
+      const state = resume?.writers[i];
+      return state
+        ? LayerWriter.resume(dir, l.id, l.data.path, l.data.index, rate, channels, state)
+        : LayerWriter.create(dir, l.id, l.data.path, l.data.index, rate, channels);
     }),
   );
   const up = [new Resampler(rate, pass.sampleRate), new Resampler(rate, pass.sampleRate)];
@@ -62,6 +147,37 @@ export async function separatePass(
   const pendingInput: Float32Array[][] = Array.from({ length: channels }, () => []);
   const pendingStems: Float32Array[][][] = layers.map(() => [[], []]);
   let written = 0;
+  let first = 0;
+  if (resume) {
+    for (const [c, r] of up.entries()) {
+      const state = resume.up[c];
+      if (state) r.restore(state);
+    }
+    for (const [s, pair] of down.entries())
+      for (const [c, r] of pair.entries()) {
+        const state = resume.down[s]?.[c];
+        if (state) r.restore(state);
+      }
+    stream.restore(resume.stream);
+    for (const [c, p] of resume.pendingInput.entries()) pendingInput[c]?.push(p);
+    for (const [s, pair] of resume.pendingStems.entries())
+      for (const [c, p] of pair.entries()) pendingStems[s]?.[c]?.push(p);
+    if (resume.restTiles) restTiles?.restore(resume.restTiles);
+    written = resume.written;
+    first = resume.block;
+  }
+  let saved = performance.now();
+  const snapshot = (block: number): PassState => ({
+    block,
+    written,
+    pendingInput: pendingInput.map(concat),
+    pendingStems: pendingStems.map((pair) => pair.map(concat)),
+    up: up.map((r) => r.snapshot()),
+    down: down.map((pair) => pair.map((r) => r.snapshot())),
+    stream: stream.snapshot(),
+    writers: writers.map((w) => w.snapshot()),
+    restTiles: restTiles?.snapshot() ?? null,
+  });
 
   /** Turns the model's stereo output into the project's rate and channel count and writes what lines up. */
   const accept = async (out: Float32Array[][], final: boolean) => {
@@ -98,13 +214,17 @@ export async function separatePass(
   };
 
   try {
-    for (let k = 0; k < blocks.totalBlocks; k++) {
+    for (let k = first; k < blocks.totalBlocks; k++) {
       const planes = blocks.block(input, k);
       for (let c = 0; c < channels; c++) pendingInput[c]?.push((planes[c] ?? new Float32Array(0)).slice());
       const left = planes[0] ?? new Float32Array(blocks.blockLength(k));
       const right = planes[1] ?? left;
       const out = await stream.push(up[0]?.push(left) ?? left, up[1]?.push(right) ?? right);
       await accept(out, false);
+      if (checkpoints && performance.now() - saved > CHECKPOINT_MS) {
+        await checkpoints.save(snapshot(k + 1));
+        saved = performance.now();
+      }
       if (k % 8 === 0) await new Promise((r) => setTimeout(r, 0));
     }
     const tailL = up[0]?.finish() ?? new Float32Array(0);

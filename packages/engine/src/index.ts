@@ -1,4 +1,5 @@
 export const ENGINE_VERSION = "0.0.0";
+export { concatFloat32 } from "./buffers";
 export { OverlapAdder, planChunks, transitionWindow, triangleWeights, type Chunk } from "./chunks";
 export { Xorshift32, quantize16, toFloat } from "./dither";
 export {

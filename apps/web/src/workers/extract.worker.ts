@@ -6,7 +6,7 @@ import { projectDir } from "../storage/opfs";
 import { TileWriter } from "./layer-writer";
 import { createSession } from "./ort-session";
 import type { ExtractMessage, ExtractRequest } from "./protocol";
-import { separatePass } from "./separate-pass";
+import { passCheckpoints, progressPoster, separatePass } from "./separate-pass";
 
 const post = (m: ExtractMessage) => postMessage(m);
 
@@ -49,10 +49,12 @@ async function extract(req: ExtractRequest): Promise<{ device: string; realTimeF
   const total = project.source.frames;
   const dir = await projectDir(project.id);
   const t0 = performance.now();
-  post({ type: "progress", fraction: 0, stage: `${req.prompt}: loading model`, etaSeconds: null });
+  const checkpoints = await passCheckpoints(dir, op.id, "pass");
+  const from = (checkpoints.resume?.written ?? 0) / total;
+  post({ type: "progress", fraction: from, stage: `${req.prompt}: loading model`, etaSeconds: null });
   const created = await createSession(await modelBytes("audiosep-base"), req.useGpu);
   const stage = `${req.prompt} on the ${created.device}`;
-  post({ type: "progress", fraction: 0, stage, etaSeconds: null });
+  post({ type: "progress", fraction: from, stage, etaSeconds: null });
   const restTiles = new TileWriter(dir, rest.id, project.source.sampleRate);
   const model = {
     model: new OrtAudioSep(created.session, Float32Array.from(embedding)),
@@ -60,17 +62,10 @@ async function extract(req: ExtractRequest): Promise<{ device: string; realTimeF
     segment: AUDIOSEP.segment,
     overlap: AUDIOSEP.overlap,
   };
+  const progress = progressPoster(post, t0);
   try {
-    await separatePass(dir, project, op.input, model, [target], restTiles, (written) => {
-      const fraction = written / total;
-      const elapsed = (performance.now() - t0) / 1000;
-      post({
-        type: "progress",
-        fraction,
-        stage,
-        etaSeconds: fraction > 0.02 ? (elapsed / fraction) * (1 - fraction) : null,
-      });
-    });
+    const report = (written: number) => progress(written / total, stage);
+    await separatePass(dir, project, op.input, model, [target], restTiles, report, checkpoints);
   } finally {
     await created.session.release();
   }
