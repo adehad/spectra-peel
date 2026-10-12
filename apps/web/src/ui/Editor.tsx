@@ -1,4 +1,4 @@
-import { deserializePeaks, type PeaksPyramid } from "@spectra-peel/engine";
+import { deserializePeaks, type PeaksPyramid, type SampleRange } from "@spectra-peel/engine";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { keepAlive } from "../audio/keep-alive";
 import { Player } from "../audio/player";
@@ -28,6 +28,7 @@ import {
 } from "../storage/opfs";
 import { modelStatus } from "../storage/models";
 import { ModelsPanel, type ModelsNeed } from "./ModelsPanel";
+import { DenoiseConfirm } from "./DenoiseConfirm";
 import { ExtractConfirm } from "./ExtractConfirm";
 import { SpeakersConfirm } from "./SpeakersConfirm";
 import { StemsConfirm, type StemsReady } from "./StemsConfirm";
@@ -38,7 +39,9 @@ import { LivePanel } from "./LivePanel";
 import { Overview } from "./Overview";
 import type { Tint } from "./paint";
 import { layerColor } from "./palette";
+import { opTitle } from "./labels";
 import { SpectrogramView } from "./SpectrogramView";
+import { TOGGLE } from "./styles";
 import { ProjectTiles } from "./tiles";
 import { useFrame } from "./useCanvas";
 import { MAX_SPAN, MIN_SPAN, useView } from "./view";
@@ -92,6 +95,14 @@ interface Job {
   fraction: number;
   stage: string;
   etaSeconds: number | null;
+  /** The run dialog's estimate for the whole job, shown until the worker has its own. */
+  estimateSeconds: number | null;
+}
+
+function timeLeft(job: Job): string {
+  if (job.etaSeconds !== null) return ` · about ${formatTime(job.etaSeconds)} left`;
+  if (job.estimateSeconds !== null) return ` · roughly ${formatTime(job.estimateSeconds)} in all`;
+  return "";
 }
 
 type JobMessage =
@@ -240,7 +251,6 @@ interface WorkspaceProps {
 function Workspace({ project, setProject, dir, peaks, player, onClose }: WorkspaceProps) {
   const [playing, setPlaying] = useState(player.isPlaying);
   const [now, setNow] = useState(0);
-  const [tab, setTab] = useState<"live" | "layers">("live");
   const [job, setJob] = useState<Job>();
   const [interrupted, setInterrupted] = useState<JobRecord>();
   const busy = job !== undefined || interrupted !== undefined;
@@ -251,6 +261,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   const [stemsReady, setStemsReady] = useState<StemsReady | null>(null);
   const [askingSpeakers, setAskingSpeakers] = useState(false);
   const [askingExtract, setAskingExtract] = useState(false);
+  const [askingDenoise, setAskingDenoise] = useState<SampleRange | null>(null);
   const [modelsNeed, setModelsNeed] = useState<ModelsNeed | null>(null);
   const lastOp = project.ops.at(-1);
   // Parts read best over the mix they came from; a denoise over its result, tinted by what it removed.
@@ -325,13 +336,13 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
    * Runs an op in a worker and adds its layers when it finishes. Call it from a user gesture, so the
    * keep-alive may start playing. The saved record lets a reload offer to resume the job.
    */
-  const runJob = (record: JobRecord) => {
+  const runJob = (record: JobRecord, estimateSeconds: number | null = null) => {
     const id = record.request.op.id;
     const title = JOB_TITLES[record.kind];
     const files = jobFiles(record);
     const worker = jobWorker(record.kind);
     setNotice(undefined);
-    setJob({ id, files, worker, fraction: 0, stage: "Starting", etaSeconds: null });
+    setJob({ id, files, worker, fraction: 0, stage: "Starting", etaSeconds: null, estimateSeconds });
     useJobs.getState().start(id);
     keepAlive.start(title, project.name);
     const t0 = performance.now();
@@ -381,12 +392,18 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     );
   };
 
-  const startDenoise = () => {
+  const askDenoise = () => {
     const sel = useView.getState().selection;
-    const range = sel
-      ? { start: Math.round(sel.start * rate), end: Math.round(sel.end * rate) }
-      : { start: 0, end: project.source.frames };
-    runJob({ kind: "denoise", request: { project, ...planDenoise(project, base, range) } });
+    setAskingDenoise(
+      sel
+        ? { start: Math.round(sel.start * rate), end: Math.round(sel.end * rate) }
+        : { start: 0, end: project.source.frames },
+    );
+  };
+
+  const startDenoise = (range: SampleRange, estimate: number) => {
+    setAskingDenoise(null);
+    runJob({ kind: "denoise", request: { project, ...planDenoise(project, base, range) } }, estimate);
   };
 
   const askStems = () => {
@@ -397,9 +414,9 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         else
           setModelsNeed({
             ids: [FAST_STEMS],
-            title: "Add the stems model",
+            title: "Add the Stems model",
             about:
-              "Stems needs HT-Demucs on this device. Download it or add its .onnx file, then continue. The best-quality models are optional; add them later from the stems dialog.",
+              "Stems needs HT-Demucs on this device. Add its .onnx file, then continue. The best-quality models are optional; you can add them on the next screen.",
             onContinue: () => {
               setModelsNeed(null);
               askStems();
@@ -411,9 +428,12 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     );
   };
 
-  const startStems = (best: number[], useGpu: boolean) => {
+  const startStems = (best: number[], useGpu: boolean, estimate: number) => {
     setStemsReady(null);
-    runJob({ kind: "separate", request: { project, ...planSeparate(project, base, best), best, useGpu } });
+    runJob(
+      { kind: "separate", request: { project, ...planSeparate(project, base, best), best, useGpu } },
+      estimate,
+    );
   };
 
   const askSpeakers = () => {
@@ -437,9 +457,12 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     );
   };
 
-  const startSpeakers = (count: number, useGpu: boolean) => {
+  const startSpeakers = (count: number, useGpu: boolean, estimate: number) => {
     setAskingSpeakers(false);
-    runJob({ kind: "speakers", request: { project, ...planSpeakers(project, base, count), useGpu } });
+    runJob(
+      { kind: "speakers", request: { project, ...planSpeakers(project, base, count), useGpu } },
+      estimate,
+    );
   };
 
   const askExtract = () => {
@@ -463,9 +486,12 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     );
   };
 
-  const startExtract = (prompt: ExtractPrompt, useGpu: boolean) => {
+  const startExtract = (prompt: ExtractPrompt, useGpu: boolean, estimate: number) => {
     setAskingExtract(false);
-    runJob({ kind: "extract", request: { project, ...planExtract(project, base, prompt), prompt, useGpu } });
+    runJob(
+      { kind: "extract", request: { project, ...planExtract(project, base, prompt), prompt, useGpu } },
+      estimate,
+    );
   };
 
   const cancelJob = () => {
@@ -548,7 +574,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
       </header>
 
       <Overview peaks={peaks} player={player} />
-      <div className="flex items-center gap-2 border-b border-edge px-3 py-1 text-xs pointer-coarse:text-sm">
+      <div className="flex flex-wrap items-center gap-2 border-b border-edge px-3 py-1 text-xs pointer-coarse:text-sm">
         <label className="flex items-center gap-1 text-dim">
           View
           <select
@@ -557,11 +583,23 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
             className="rounded bg-edge px-1 py-0.5 text-zinc-100"
             data-testid="view-layer"
           >
-            {project.layers.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.label}
-                {l.producedBy ? ` (${project.ops.findIndex((o) => o.id === l.producedBy) + 1})` : ""}
-              </option>
+            {project.layers
+              .filter((l) => !l.producedBy)
+              .map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            {project.ops.map((o) => (
+              <optgroup key={o.id} label={opTitle(project, o)}>
+                {project.layers
+                  .filter((l) => l.producedBy === o.id)
+                  .map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.label}
+                    </option>
+                  ))}
+              </optgroup>
             ))}
           </select>
         </label>
@@ -570,23 +608,78 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
             type="button"
             aria-pressed={colours}
             onClick={() => setColours(!colours)}
-            className="rounded px-2 py-0.5 text-dim aria-pressed:bg-edge aria-pressed:text-zinc-100"
+            className={TOGGLE}
             data-testid="colours"
           >
-            {
-              {
-                denoise: "Removed energy",
-                separate: "Stem colours",
-                speakers: "Speaker colours",
-                extract: "Layer colours",
-              }[op.kind]
-            }
+            Tint layers
           </button>
         ) : null}
+        <button type="button" aria-pressed={follow} onClick={() => setFollow(!follow)} className={TOGGLE}>
+          Follow
+        </button>
         <span className="ml-auto font-mono text-dim tabular-nums">
           {selection ? `${formatTime(selection.start, true)} – ${formatTime(selection.end, true)}` : ""}
         </span>
+        <button
+          type="button"
+          aria-label="Zoom out"
+          disabled={span >= Math.min(MAX_SPAN, duration)}
+          onClick={() => zoom(2, now)}
+          className="size-6 rounded bg-edge disabled:opacity-40 pointer-coarse:hidden"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          aria-label="Zoom in"
+          disabled={span <= MIN_SPAN}
+          onClick={() => zoom(0.5, now)}
+          className="size-6 rounded bg-edge disabled:opacity-40 pointer-coarse:hidden"
+        >
+          +
+        </button>
       </div>
+      {job ? (
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-edge bg-panel px-3 py-1.5 text-xs pointer-coarse:text-sm"
+          data-testid="job"
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {job.stage}… {Math.round(job.fraction * 100)}%{timeLeft(job)}
+          </span>
+          <button
+            type="button"
+            onClick={cancelJob}
+            className="rounded border border-edge px-2 py-0.5 text-dim hover:text-zinc-100 md:order-last"
+          >
+            Cancel
+          </button>
+          <progress value={job.fraction} className="h-1 basis-full accent-accent md:basis-auto md:flex-1" />
+        </div>
+      ) : null}
+      {interrupted ? (
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-edge bg-panel px-3 py-1.5 text-xs pointer-coarse:text-sm"
+          data-testid="interrupted"
+        >
+          <span className="min-w-0 flex-1">{JOB_TITLES[interrupted.kind]} stopped when the page closed.</span>
+          <button
+            type="button"
+            onClick={discard}
+            className="rounded border border-edge px-2 py-0.5 text-dim hover:text-zinc-100"
+          >
+            Discard
+          </button>
+          <button
+            type="button"
+            onClick={resume}
+            className="rounded bg-accent px-2 py-0.5 text-ink"
+            data-testid="resume"
+          >
+            Resume
+          </button>
+        </div>
+      ) : null}
       <div className="relative min-h-0 flex-1">
         <SpectrogramView
           tiles={tiles}
@@ -596,43 +689,6 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           selectMode={selectMode}
           focus={focus !== null}
         />
-        {job ? (
-          <div
-            className="absolute inset-x-0 top-0 flex items-center gap-2 bg-ink/80 px-3 py-1.5 text-xs"
-            data-testid="job"
-          >
-            <span>
-              {job.stage}… {Math.round(job.fraction * 100)}%
-              {job.etaSeconds === null ? "" : ` · about ${formatTime(job.etaSeconds)} left`}
-            </span>
-            <progress value={job.fraction} className="h-1 flex-1 accent-accent" />
-            <button type="button" onClick={cancelJob} className="text-dim hover:text-zinc-100">
-              Cancel
-            </button>
-          </div>
-        ) : null}
-        {interrupted ? (
-          <div
-            className="absolute inset-x-0 top-0 flex flex-wrap items-center gap-2 bg-ink/80 px-3 py-1.5 text-xs"
-            data-testid="interrupted"
-          >
-            <span className="min-w-0 flex-1">
-              {JOB_TITLES[interrupted.kind]} stopped when the page closed. Resume carries on from the last
-              checkpoint.
-            </span>
-            <button type="button" onClick={discard} className="text-dim hover:text-zinc-100">
-              Discard
-            </button>
-            <button
-              type="button"
-              onClick={resume}
-              className="rounded bg-accent px-2 py-0.5 text-ink"
-              data-testid="resume"
-            >
-              Resume
-            </button>
-          </div>
-        ) : null}
         {notice ? (
           <p
             role="alert"
@@ -643,25 +699,11 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         ) : null}
       </div>
 
-      <div className="flex h-44 shrink-0 flex-col border-t border-edge bg-panel pointer-coarse:h-56 md:grid md:h-48 md:grid-cols-[2fr_1fr] md:grid-rows-1 md:divide-x md:divide-edge">
-        <div className="flex shrink-0 border-b border-edge text-xs md:hidden" role="tablist">
-          {(["live", "layers"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className="flex-1 py-1.5 capitalize text-dim aria-selected:text-zinc-100 aria-selected:shadow-[inset_0_-2px_0_var(--color-accent)]"
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-        <div className={`min-h-0 flex-1 md:block md:h-full ${tab === "live" ? "" : "hidden"}`}>
+      <div className="flex max-h-[40dvh] shrink-0 flex-col border-t border-edge bg-panel md:grid md:h-48 md:max-h-none md:grid-cols-[2fr_1fr] md:grid-rows-1 md:divide-x md:divide-edge">
+        <div className="hidden md:block md:h-full">
           <LivePanel layers={liveLayers} sampleRate={rate} />
         </div>
-        <div className={`min-h-0 flex-1 md:block md:h-full ${tab === "layers" ? "" : "hidden"}`}>
+        <div className="min-h-0 flex-1 md:h-full">
           <LayersPanel
             project={project}
             colors={colors}
@@ -669,6 +711,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
             onAdjust={onAdjust}
             onUndo={undo}
             busy={busy}
+            analysers={player.analysers}
           />
         </div>
       </div>
@@ -691,73 +734,36 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           type="button"
           aria-pressed={selectMode}
           onClick={() => setSelectMode(!selectMode)}
-          className="rounded px-2 py-1 text-sm text-dim aria-pressed:bg-edge aria-pressed:text-zinc-100"
+          className={`${TOGGLE} py-1 text-sm`}
           title="Drag on the spectrogram to select a range (or hold Shift)"
         >
           Select
         </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={startDenoise}
-          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40 pointer-coarse:order-last"
-          data-testid="denoise"
-        >
-          Denoise {selection ? "selection" : "all"}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={askStems}
-          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40 pointer-coarse:order-last"
-          data-testid="stems"
-        >
-          Stems
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={askSpeakers}
-          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40 pointer-coarse:order-last"
-          data-testid="speakers"
-        >
-          People
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={askExtract}
-          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40 pointer-coarse:order-last"
-          data-testid="extract"
-        >
-          Extract
-        </button>
-        <button
-          type="button"
-          aria-pressed={follow}
-          onClick={() => setFollow(!follow)}
-          className="rounded px-2 py-1 text-sm text-dim aria-pressed:bg-edge aria-pressed:text-zinc-100"
-        >
-          Follow
-        </button>
-        <button
-          type="button"
-          aria-label="Zoom out"
-          disabled={span >= Math.min(MAX_SPAN, duration)}
-          onClick={() => zoom(2, now)}
-          className="size-8 rounded bg-edge disabled:opacity-40 pointer-coarse:hidden"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          aria-label="Zoom in"
-          disabled={span <= MIN_SPAN}
-          onClick={() => zoom(0.5, now)}
-          className="size-8 rounded bg-edge disabled:opacity-40 pointer-coarse:hidden"
-        >
-          +
-        </button>
+        <fieldset className="m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0 pointer-coarse:order-last pointer-coarse:basis-full">
+          <legend className="sr-only">Add layer</legend>
+          <span className="hidden text-xs text-dim md:inline" aria-hidden="true">
+            Add layer
+          </span>
+          {(
+            [
+              ["denoise", askDenoise, selection ? "Denoise selection" : "Denoise"],
+              ["stems", askStems, "Stems"],
+              ["speakers", askSpeakers, "People"],
+              ["extract", askExtract, "Extract"],
+            ] as const
+          ).map(([id, onClick, label]) => (
+            <button
+              key={id}
+              type="button"
+              disabled={busy}
+              onClick={onClick}
+              className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40"
+              data-testid={id}
+            >
+              {label}
+            </button>
+          ))}
+        </fieldset>
       </footer>
       {stemsReady ? (
         <StemsConfirm
@@ -788,6 +794,15 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           input={project.layers.find((l) => l.id === base)?.label ?? "Source"}
           onRun={startSpeakers}
           onClose={() => setAskingSpeakers(false)}
+        />
+      ) : null}
+      {askingDenoise ? (
+        <DenoiseConfirm
+          project={project}
+          input={project.layers.find((l) => l.id === base)?.label ?? "Source"}
+          range={askingDenoise}
+          onRun={(estimate) => startDenoise(askingDenoise, estimate)}
+          onClose={() => setAskingDenoise(null)}
         />
       ) : null}
       {askingExtract ? (

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { syntheticWav } from "./fixtures";
+import { denoise, syntheticWav } from "./fixtures";
 
 test("works offline once installed, still cross-origin isolated", async ({ page, context }) => {
   test.setTimeout(180_000);
@@ -19,7 +19,6 @@ test("works offline once installed, still cross-origin isolated", async ({ page,
     .getByTestId("import")
     .setInputFiles({ name: "offline.wav", mimeType: "audio/wav", buffer: syntheticWav(6) });
   await expect(page.getByTestId("project-name")).toHaveText("offline", { timeout: 60_000 });
-  await page.getByTestId("denoise").click();
-  await expect(page.getByTestId("job")).toBeHidden({ timeout: 120_000 });
+  await denoise(page);
   await expect(page.getByTestId("layer-denoised")).toHaveCount(1);
 });
