@@ -504,6 +504,14 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         <span className="hidden text-xs text-dim tabular-nums sm:inline">
           {(rate / 1000).toFixed(1)} kHz · {project.source.channels === 1 ? "mono" : "stereo"}
         </span>
+        <button
+          type="button"
+          onClick={() => setExporting(true)}
+          className="rounded bg-edge px-3 py-1 text-sm"
+          data-testid="export"
+        >
+          Export
+        </button>
       </header>
 
       <Overview peaks={peaks} player={player} />
@@ -674,14 +682,6 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           data-testid="speakers"
         >
           People
-        </button>
-        <button
-          type="button"
-          onClick={() => setExporting(true)}
-          className="rounded bg-edge px-3 py-1 text-sm pointer-coarse:order-last"
-          data-testid="export"
-        >
-          Export
         </button>
         <button
           type="button"
