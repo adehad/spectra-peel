@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { syntheticWav } from "./fixtures";
+import { addModel, syntheticWav } from "./fixtures";
 
 // Local only: the converted models are not hosted. Build them with reference/, then point
 // SPECTRA_STEMS_MODEL at htdemucs-stems.onnx and SPECTRA_FT_MODELS at the folder holding whichever
@@ -9,11 +9,6 @@ import { syntheticWav } from "./fixtures";
 const MODEL = process.env["SPECTRA_STEMS_MODEL"];
 const FT = process.env["SPECTRA_FT_MODELS"];
 const STEMS = ["drums", "bass", "other", "vocals"];
-
-async function addModel(page: Page, id: string, path: string) {
-  await page.getByTestId(`model-${id}`).locator('input[type="file"]').setInputFiles(path);
-  await expect(page.getByTestId(`model-${id}`)).toContainText("Ready", { timeout: 120_000 });
-}
 
 /** Imports a synthetic clip, separates it with `best` from specialists and logs the real-time factor. */
 async function separate(page: Page, best: string[]) {

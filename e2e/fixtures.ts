@@ -1,4 +1,5 @@
 import { closeSync, openSync, writeSync } from "node:fs";
+import { expect, type Page } from "@playwright/test";
 
 /** 16-bit stereo WAV: a tone gliding 100-500 Hz in the left channel, the same tone plus hiss in the right. */
 export function syntheticWav(seconds: number, sampleRate = 44_100): Buffer {
@@ -47,4 +48,10 @@ function wavHeader(frames: number, sampleRate: number): Buffer {
   header.write("data", 36);
   header.writeUInt32LE(dataBytes, 40);
   return header;
+}
+
+/** Adds a model from a file in the open Models panel and waits for its hash check. */
+export async function addModel(page: Page, id: string, path: string): Promise<void> {
+  await page.getByTestId(`model-${id}`).locator('input[type="file"]').setInputFiles(path);
+  await expect(page.getByTestId(`model-${id}`)).toContainText("Ready", { timeout: 120_000 });
 }
