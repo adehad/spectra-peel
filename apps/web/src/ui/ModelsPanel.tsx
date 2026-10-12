@@ -54,10 +54,10 @@ export function ModelsPanel({ onClose }: { onClose: () => void }) {
       <dialog
         open
         aria-label="Models"
-        className="static m-0 w-full max-w-lg rounded-t-xl border border-edge bg-panel p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-zinc-100 sm:rounded-xl"
+        className="static m-0 flex max-h-[90dvh] w-full max-w-lg flex-col rounded-t-xl border border-edge bg-panel p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-zinc-100 sm:rounded-xl"
       >
         <h2 className="mb-3 font-medium">Models</h2>
-        <ul className="mb-3 divide-y divide-edge">
+        <ul className="mb-3 min-h-0 divide-y divide-edge overflow-y-auto">
           {status.map((s) => {
             const spec = MODELS[s.id];
             const working = busy?.id === s.id;

@@ -176,7 +176,7 @@ export function ExportPanel({ project, dir, selection, onClose }: Props) {
       <dialog
         open
         aria-label="Export"
-        className="static m-0 w-full max-w-md rounded-t-xl text-zinc-100 border border-edge bg-panel p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-xl"
+        className="static m-0 max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-xl text-zinc-100 border border-edge bg-panel p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-xl"
       >
         <h2 className="mb-3 font-medium">Export the mix</h2>
         <fieldset className="mb-3 flex flex-col gap-1.5 text-sm">
