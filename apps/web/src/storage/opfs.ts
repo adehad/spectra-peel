@@ -1,3 +1,4 @@
+import { JobRecordSchema, type JobRecord } from "../project/job-record";
 import { ProjectSchema, type Project } from "../project/schema";
 
 /**
@@ -12,6 +13,10 @@ export const paths = {
   layerIndex: (layer: string) => `layers/${layer}.idx`,
   peaks: (layer: string) => `derived/peaks/${layer}.bin`,
   tile: (layer: string, n: number) => `derived/tiles/${layer}/${n}.bin`,
+  /** A running op's folder: its record, and whatever its worker saves to resume from. */
+  job: (op: string) => `jobs/${op}`,
+  jobRecord: (op: string) => `jobs/${op}/job.json`,
+  checkpoint: (op: string, name: string) => `jobs/${op}/${name}`,
 };
 
 export async function projectsDir(): Promise<FileSystemDirectoryHandle> {
@@ -45,6 +50,34 @@ export async function writeProject(dir: FileSystemDirectoryHandle, project: Proj
   const writable = await (await fileAt(dir, paths.project, true)).createWritable();
   await writable.write(JSON.stringify(ProjectSchema.parse(project), null, 2));
   await writable.close();
+}
+
+/** Main thread only, like project.json. */
+export async function writeJobRecord(dir: FileSystemDirectoryHandle, record: JobRecord): Promise<void> {
+  const writable = await (await fileAt(dir, paths.jobRecord(record.request.op.id), true)).createWritable();
+  await writable.write(JSON.stringify(record));
+  await writable.close();
+}
+
+/** Jobs a closed page left behind; folders without a readable record are skipped. */
+export async function readJobRecords(dir: FileSystemDirectoryHandle): Promise<JobRecord[]> {
+  let jobs: FileSystemDirectoryHandle;
+  try {
+    jobs = await dir.getDirectoryHandle("jobs");
+  } catch {
+    return [];
+  }
+  const records: JobRecord[] = [];
+  for await (const entry of jobs.values()) {
+    if (entry.kind !== "directory") continue;
+    try {
+      const text = await (await (await entry.getFileHandle("job.json")).getFile()).text();
+      records.push(JobRecordSchema.parse(JSON.parse(text)));
+    } catch {
+      continue;
+    }
+  }
+  return records;
 }
 
 /** Deletes a file if it exists, creating no directories on the way. */

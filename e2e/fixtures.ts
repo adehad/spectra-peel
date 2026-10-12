@@ -55,3 +55,15 @@ export async function addModel(page: Page, id: string, path: string): Promise<vo
   await page.getByTestId(`model-${id}`).locator('input[type="file"]').setInputFiles(path);
   await expect(page.getByTestId(`model-${id}`)).toContainText("Ready", { timeout: 120_000 });
 }
+
+/** The stages the running job shows, in order, until it finishes. */
+export async function jobStages(page: Page): Promise<string[]> {
+  const stages = new Set<string>();
+  const job = page.getByTestId("job");
+  while (await job.isVisible()) {
+    const text = (await job.textContent().catch(() => "")) ?? "";
+    stages.add(text.split("…")[0] ?? "");
+    await page.waitForTimeout(100);
+  }
+  return [...stages];
+}

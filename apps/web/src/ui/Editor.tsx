@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Player } from "../audio/player";
 import { useJobs } from "../jobs";
 import { FAST_STEMS, SPEAKER_MODELS, SPECIALISTS } from "../models";
+import { JOB_TITLES, jobLayers, type JobRecord } from "../project/job-record";
 import {
   applyDenoise,
   applySeparate,
@@ -12,10 +13,17 @@ import {
   planSpeakers,
   undoLast,
 } from "../project/ops";
-import { SOURCE_LAYER, layerGains, type Layer, type Mix, type Op, type Project } from "../project/schema";
-import { paths, projectDir, readBytes, removeFile, writeProject } from "../storage/opfs";
+import { SOURCE_LAYER, layerGains, type Mix, type Op, type Project } from "../project/schema";
+import {
+  paths,
+  projectDir,
+  readBytes,
+  readJobRecords,
+  removeFile,
+  writeJobRecord,
+  writeProject,
+} from "../storage/opfs";
 import { modelStatus } from "../storage/models";
-import type { DenoiseRequest, SeparateRequest, SpeakersRequest } from "../workers/protocol";
 import { ModelsPanel } from "./ModelsPanel";
 import { SpeakersConfirm } from "./SpeakersConfirm";
 import { StemsConfirm, type StemsReady } from "./StemsConfirm";
@@ -80,7 +88,6 @@ interface Job {
   fraction: number;
   stage: string;
   etaSeconds: number | null;
-  wakeLock: WakeLockSentinel | null;
 }
 
 type JobMessage =
@@ -92,13 +99,55 @@ async function deleteFiles(dir: FileSystemDirectoryHandle, files: string[]): Pro
   for (const f of files) await removeFile(dir, f);
 }
 
-/** Every file an op's layers may have written, for cleaning up after a failed or cancelled job. */
-function layerFiles(layers: readonly Layer[]): string[] {
-  return layers.flatMap((l) => [
-    ...(l.data.kind === "flac" ? [l.data.path, l.data.index] : []),
-    paths.peaks(l.id),
-    `derived/tiles/${l.id}`,
-  ]);
+/** Every file a job may have written, for cleaning up after it fails or is cancelled. */
+function jobFiles(record: JobRecord): string[] {
+  const files = [paths.job(record.request.op.id)];
+  for (const l of jobLayers(record)) {
+    if (l.data.kind === "flac") files.push(l.data.path, l.data.index);
+    files.push(paths.peaks(l.id), `derived/tiles/${l.id}`);
+  }
+  return files;
+}
+
+function jobWorker(kind: JobRecord["kind"]): Worker {
+  if (kind === "denoise")
+    return new Worker(new URL("../workers/denoise.worker.ts", import.meta.url), { type: "module" });
+  if (kind === "separate")
+    return new Worker(new URL("../workers/separate.worker.ts", import.meta.url), { type: "module" });
+  return new Worker(new URL("../workers/speakers.worker.ts", import.meta.url), { type: "module" });
+}
+
+function applyJob(project: Project, record: JobRecord): Project {
+  if (record.kind === "denoise") return applyDenoise(project, record.request);
+  if (record.kind === "separate") return applySeparate(project, record.request);
+  return applySpeakers(project, record.request);
+}
+
+/** Keeps the screen on while `active`, taking the lock again whenever the page comes back into view. */
+function useWakeLock(active: boolean): void {
+  useEffect(() => {
+    if (!active || !("wakeLock" in navigator)) return undefined;
+    let lock: WakeLockSentinel | undefined;
+    let done = false;
+    const take = () => {
+      if (document.visibilityState !== "visible") return;
+      navigator.wakeLock.request("screen").then(
+        (l) => {
+          if (done) void l.release();
+          else lock = l;
+          return undefined;
+        },
+        () => undefined,
+      );
+    };
+    take();
+    document.addEventListener("visibilitychange", take);
+    return () => {
+      done = true;
+      document.removeEventListener("visibilitychange", take);
+      void lock?.release();
+    };
+  }, [active]);
 }
 
 export function Editor({ project: initial, onClose }: { project: Project; onClose: () => void }) {
@@ -186,6 +235,9 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
   const [now, setNow] = useState(0);
   const [tab, setTab] = useState<"live" | "layers">("live");
   const [job, setJob] = useState<Job>();
+  const [interrupted, setInterrupted] = useState<JobRecord>();
+  const busy = job !== undefined || interrupted !== undefined;
+  useWakeLock(job !== undefined);
   const [notice, setNotice] = useState<string>();
   const [selectMode, setSelectMode] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -251,52 +303,41 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     }
   };
 
-  /** Runs an op in a worker, keeps the screen awake, and adds its layers when it finishes. */
-  const runJob = (
-    id: string,
-    layers: Layer[],
-    worker: Worker,
-    request: DenoiseRequest | SeparateRequest | SpeakersRequest,
-    finish: (p: Project) => Project,
-  ) => {
-    setNotice(undefined);
-    const files = layerFiles(layers);
-    setJob({ id, files, worker, fraction: 0, stage: "Starting", etaSeconds: null, wakeLock: null });
-    useJobs.getState().start(id);
-    ("wakeLock" in navigator
-      ? navigator.wakeLock.request("screen")
-      : Promise.reject(new Error("no wake lock"))
-    ).then(
-      (wakeLock) => {
-        setJob((j) => (j?.id === id ? { ...j, wakeLock } : j));
+  useEffect(() => {
+    readJobRecords(dir).then(
+      (records) => {
+        setInterrupted(records[0]);
         return undefined;
       },
-      () => undefined,
+      (e: unknown) => setNotice(String(e)),
     );
-    worker.addEventListener("message", (e: MessageEvent<JobMessage>) => {
-      const m = e.data;
-      if (m.type === "progress") {
-        setJob((j) =>
-          j ? { ...j, fraction: m.fraction, stage: m.stage, etaSeconds: m.etaSeconds ?? null } : j,
-        );
-        return;
-      }
+  }, [dir]);
+
+  /**
+   * Runs an op in a worker and adds its layers when it finishes. The saved record lets a reload offer
+   * to resume the job.
+   */
+  const runJob = (record: JobRecord) => {
+    const id = record.request.op.id;
+    const files = jobFiles(record);
+    const worker = jobWorker(record.kind);
+    setNotice(undefined);
+    setJob({ id, files, worker, fraction: 0, stage: "Starting", etaSeconds: null });
+    useJobs.getState().start(id);
+    const end = (m: JobMessage) => {
       worker.terminate();
       useJobs.getState().end(id);
-      setJob((j) => {
-        void j?.wakeLock?.release();
-        return j;
-      });
       if (m.type === "error") {
         setJob(undefined);
         setNotice(`Failed: ${m.message}`);
         void deleteFiles(dir, files);
         return;
       }
-      const next = finish(project);
+      const next = applyJob(project, record);
       void (async () => {
         try {
           await writeProject(dir, next);
+          await removeFile(dir, paths.job(id));
           useView.getState().setSelection(null);
           setProject(next);
         } catch (err) {
@@ -304,8 +345,21 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         }
         setJob(undefined);
       })();
+    };
+    worker.addEventListener("message", (e: MessageEvent<JobMessage>) => {
+      const m = e.data;
+      if (m.type !== "progress") {
+        end(m);
+        return;
+      }
+      setJob((j) =>
+        j ? { ...j, fraction: m.fraction, stage: m.stage, etaSeconds: m.etaSeconds ?? null } : j,
+      );
     });
-    worker.postMessage(request);
+    writeJobRecord(dir, record).then(
+      () => worker.postMessage(record.request),
+      (err: unknown) => end({ type: "error", message: String(err) }),
+    );
   };
 
   const startDenoise = () => {
@@ -313,10 +367,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     const range = sel
       ? { start: Math.round(sel.start * rate), end: Math.round(sel.end * rate) }
       : { start: 0, end: project.source.frames };
-    const plan = planDenoise(project, base, range);
-    const worker = new Worker(new URL("../workers/denoise.worker.ts", import.meta.url), { type: "module" });
-    const req: DenoiseRequest = { project, op: plan.op, output: plan.output, removed: plan.removed };
-    runJob(plan.op.id, [plan.output, plan.removed], worker, req, (p) => applyDenoise(p, plan));
+    runJob({ kind: "denoise", request: { project, ...planDenoise(project, base, range) } });
   };
 
   const askStems = () => {
@@ -333,17 +384,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
 
   const startStems = (best: number[], useGpu: boolean) => {
     setStemsReady(null);
-    const plan = planSeparate(project, base, best);
-    const worker = new Worker(new URL("../workers/separate.worker.ts", import.meta.url), { type: "module" });
-    const req: SeparateRequest = {
-      project,
-      op: plan.op,
-      stems: plan.stems,
-      rest: plan.rest,
-      best,
-      useGpu,
-    };
-    runJob(plan.op.id, [...plan.stems, plan.rest], worker, req, (p) => applySeparate(p, plan));
+    runJob({ kind: "separate", request: { project, ...planSeparate(project, base, best), best, useGpu } });
   };
 
   const askSpeakers = () => {
@@ -359,20 +400,28 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
 
   const startSpeakers = (count: number, useGpu: boolean) => {
     setAskingSpeakers(false);
-    const plan = planSpeakers(project, base, count);
-    const worker = new Worker(new URL("../workers/speakers.worker.ts", import.meta.url), { type: "module" });
-    const req: SpeakersRequest = { project, op: plan.op, people: plan.people, rest: plan.rest, useGpu };
-    runJob(plan.op.id, [...plan.people, plan.rest], worker, req, (p) => applySpeakers(p, plan));
+    runJob({ kind: "speakers", request: { project, ...planSpeakers(project, base, count), useGpu } });
   };
 
   const cancelJob = () => {
     if (!job) return;
     job.worker.terminate();
-    void job.wakeLock?.release();
     useJobs.getState().end(job.id);
     setJob(undefined);
     // Terminating releases the worker's handles shortly after, not synchronously.
     setTimeout(() => void deleteFiles(dir, job.files).catch(() => undefined), 500);
+  };
+
+  const resume = () => {
+    if (!interrupted) return;
+    setInterrupted(undefined);
+    runJob(interrupted);
+  };
+
+  const discard = () => {
+    if (!interrupted) return;
+    setInterrupted(undefined);
+    deleteFiles(dir, jobFiles(interrupted)).catch((e: unknown) => setNotice(String(e)));
   };
 
   const undo = () => {
@@ -481,6 +530,28 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
             </button>
           </div>
         ) : null}
+        {interrupted ? (
+          <div
+            className="absolute inset-x-0 top-0 flex flex-wrap items-center gap-2 bg-ink/80 px-3 py-1.5 text-xs"
+            data-testid="interrupted"
+          >
+            <span className="min-w-0 flex-1">
+              {JOB_TITLES[interrupted.kind]} stopped when the page closed. Resume carries on from the last
+              checkpoint.
+            </span>
+            <button type="button" onClick={discard} className="text-dim hover:text-zinc-100">
+              Discard
+            </button>
+            <button
+              type="button"
+              onClick={resume}
+              className="rounded bg-accent px-2 py-0.5 text-ink"
+              data-testid="resume"
+            >
+              Resume
+            </button>
+          </div>
+        ) : null}
         {notice ? (
           <p
             role="alert"
@@ -516,7 +587,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
             onMix={onMix}
             onAdjust={onAdjust}
             onUndo={undo}
-            busy={job !== undefined}
+            busy={busy}
           />
         </div>
       </div>
@@ -546,7 +617,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         </button>
         <button
           type="button"
-          disabled={job !== undefined}
+          disabled={busy}
           onClick={startDenoise}
           className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40"
           data-testid="denoise"
@@ -555,7 +626,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         </button>
         <button
           type="button"
-          disabled={job !== undefined}
+          disabled={busy}
           onClick={askStems}
           className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40"
           data-testid="stems"
@@ -564,7 +635,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         </button>
         <button
           type="button"
-          disabled={job !== undefined}
+          disabled={busy}
           onClick={askSpeakers}
           className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40"
           data-testid="speakers"
