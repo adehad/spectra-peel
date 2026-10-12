@@ -15,6 +15,7 @@ import {
   windowStarts,
   type SeparatedPiece,
   type SpeakerSeparationModel,
+  type Voices,
   type Window,
 } from "@spectra-peel/engine";
 import * as ort from "onnxruntime-web/jspi";
@@ -23,6 +24,7 @@ import { dependencies } from "../project/layers";
 import type { Project } from "../project/schema";
 import { modelBytes } from "../storage/models";
 import { projectDir } from "../storage/opfs";
+import { loadCheckpoint, saveCheckpoint } from "./checkpoint";
 import { LayerWriter, TileWriter, mono } from "./layer-writer";
 import { createSession } from "./ort-session";
 import type { SpeakersMessage, SpeakersRequest } from "./protocol";
@@ -140,6 +142,85 @@ async function embedWindows(
     onProgress((w + 1) / windows.length);
   }
   return all;
+}
+
+interface Diarization {
+  voices: Voices;
+  active: Uint8Array[];
+}
+
+/** Voices as [count, dimension, centroids..., mean...]; written last, so it marks a whole checkpoint. */
+async function saveDiarization(dir: FileSystemDirectoryHandle, op: string, d: Diarization): Promise<void> {
+  const frames = d.active[0]?.length ?? 0;
+  const activity = new Uint8Array(d.active.length * frames);
+  for (const [j, a] of d.active.entries()) activity.set(a, j * frames);
+  await saveCheckpoint(dir, op, "activity.u8", activity);
+  const dim = d.voices.mean.length;
+  const voices = new Float64Array(2 + (d.voices.centroids.length + 1) * dim);
+  voices.set([d.voices.centroids.length, dim]);
+  for (const [j, c] of d.voices.centroids.entries()) voices.set(c, 2 + j * dim);
+  voices.set(d.voices.mean, 2 + d.voices.centroids.length * dim);
+  await saveCheckpoint(dir, op, "voices.f64", voices);
+}
+
+async function loadDiarization(dir: FileSystemDirectoryHandle, op: string): Promise<Diarization | null> {
+  const v = await loadCheckpoint(dir, op, "voices.f64");
+  const a = await loadCheckpoint(dir, op, "activity.u8");
+  if (!v || !a) return null;
+  const voices = new Float64Array(v);
+  const [k = 0, dim = 0] = voices;
+  const frames = a.byteLength / k;
+  return {
+    voices: {
+      centroids: Array.from({ length: k }, (_, j) => voices.slice(2 + j * dim, 2 + (j + 1) * dim)),
+      mean: voices.slice(2 + k * dim, 2 + (k + 1) * dim),
+    },
+    active: Array.from({ length: k }, (_, j) => new Uint8Array(a, j * frames, frames)),
+  };
+}
+
+/**
+ * A crosstalk piece's outputs as [count, (speaker, start, length) per output] then their audio. The
+ * header is float64 so 16 kHz sample positions stay exact past the 2^24 a float32 holds.
+ */
+async function savePiece(
+  dir: FileSystemDirectoryHandle,
+  op: string,
+  index: number,
+  outputs: readonly SeparatedPiece[],
+): Promise<void> {
+  const header = new Float64Array(1 + 3 * outputs.length);
+  header[0] = outputs.length;
+  for (const [i, o] of outputs.entries()) header.set([o.speaker, o.start, o.audio.length], 1 + 3 * i);
+  const audio = new Float32Array(outputs.reduce((n, o) => n + o.audio.length, 0));
+  let at = 0;
+  for (const o of outputs) {
+    audio.set(o.audio, at);
+    at += o.audio.length;
+  }
+  const bytes = new Uint8Array(header.byteLength + audio.byteLength);
+  bytes.set(new Uint8Array(header.buffer));
+  bytes.set(new Uint8Array(audio.buffer), header.byteLength);
+  await saveCheckpoint(dir, op, `piece-${index}.bin`, bytes);
+}
+
+/** The outputs of the pieces an earlier run finished, in order, stopping at the first one missing. */
+async function loadPieces(dir: FileSystemDirectoryHandle, op: string): Promise<SeparatedPiece[][]> {
+  const done: SeparatedPiece[][] = [];
+  for (;;) {
+    const bytes = await loadCheckpoint(dir, op, `piece-${done.length}.bin`);
+    if (!bytes) return done;
+    const count = new Float64Array(bytes, 0, 1)[0] ?? 0;
+    const header = new Float64Array(bytes, 0, 1 + 3 * count);
+    let at = header.byteLength;
+    const outputs: SeparatedPiece[] = [];
+    for (let i = 0; i < count; i++) {
+      const [speaker = 0, start = 0, length = 0] = header.subarray(1 + 3 * i, 4 + 3 * i);
+      outputs.push({ speaker, start, audio: new Float32Array(bytes, at, length) });
+      at += length * 4;
+    }
+    done.push(outputs);
+  }
 }
 
 interface Upsampled {
@@ -341,6 +422,29 @@ async function writePeople(
   await restTiles.finish();
 }
 
+/** Who speaks when: segmentation, an embedding per clear stretch of speech, then clustering. */
+async function diarize(
+  mix: Float32Array,
+  embed: (wav: Float32Array) => Promise<Float32Array>,
+  people: number,
+  setStage: (stage: string) => void,
+  progress: (from: number, to: number) => (f: number) => void,
+): Promise<Diarization> {
+  setStage("Finding who speaks when");
+  const seg = await createSession(await modelBytes("speaker-segmentation"), false);
+  let windows: Window[];
+  try {
+    windows = await segment(seg.session, mix, progress(0.1, 0.25));
+  } finally {
+    await seg.session.release();
+  }
+  setStage("Telling voices apart");
+  const embeddings = await embedWindows(windows, mix, embed, progress(0.25, 0.4));
+  if (embeddings.length < people) throw new Error(`Not enough clear speech to tell ${people} voices apart.`);
+  const voices = clusterVoices(embeddings, people);
+  return { voices, active: speakerActivity(windows, voices, mix.length) };
+}
+
 async function speakers(req: SpeakersRequest): Promise<{ device: string; realTimeFactor: number }> {
   const { project, op, people } = req;
   const dir = await projectDir(project.id);
@@ -360,16 +464,6 @@ async function speakers(req: SpeakersRequest): Promise<{ device: string; realTim
 
   const mix = await readMono16k(dir, project, op.input, progress(0, 0.1));
 
-  stage = "Finding who speaks when";
-  const seg = await createSession(await modelBytes("speaker-segmentation"), false);
-  let windows: Window[];
-  try {
-    windows = await segment(seg.session, mix, progress(0.1, 0.25));
-  } finally {
-    await seg.session.release();
-  }
-
-  stage = "Telling voices apart";
   const emb = await createSession(await modelBytes("speaker-embedding"), false);
   const fbank = new Fbank();
   const embed = async (wav: Float32Array) => {
@@ -379,13 +473,23 @@ async function speakers(req: SpeakersRequest): Promise<{ device: string; realTim
   };
   let device = "CPU";
   let pieces: SeparatedPiece[] = [];
-  let active: Uint8Array[];
+  let found: Diarization;
   try {
-    const embeddings = await embedWindows(windows, mix, embed, progress(0.25, 0.4));
-    if (embeddings.length < people.length)
-      throw new Error(`Not enough clear speech to tell ${people.length} voices apart.`);
-    const voices = clusterVoices(embeddings, people.length);
-    active = speakerActivity(windows, voices, mix.length);
+    const saved = await loadDiarization(dir, op.id);
+    if (saved) found = saved;
+    else {
+      found = await diarize(
+        mix,
+        embed,
+        people.length,
+        (next) => {
+          stage = next;
+        },
+        progress,
+      );
+      await saveDiarization(dir, op.id, found);
+    }
+    const { voices, active } = found;
 
     if (overlapPieces(active, SEGMENT).length > 0) {
       stage = "Separating crosstalk: loading model";
@@ -401,9 +505,15 @@ async function speakers(req: SpeakersRequest): Promise<{ device: string; realTim
       };
       try {
         const report = progress(0.4, 0.85);
-        pieces = await separateCrosstalk(mix, active, model, embed, voices, (done, total) =>
-          report(done / total),
-        );
+        const done = await loadPieces(dir, op.id);
+        const rest = await separateCrosstalk(mix, active, model, embed, voices, {
+          from: done.length,
+          onPiece: async (n, total, outputs) => {
+            await savePiece(dir, op.id, n - 1, outputs);
+            report(n / total);
+          },
+        });
+        pieces = [...done.flat(), ...rest];
       } finally {
         await sep.session.release();
       }
@@ -413,7 +523,7 @@ async function speakers(req: SpeakersRequest): Promise<{ device: string; realTim
   }
 
   stage = "Writing each person";
-  await writePeople(dir, req, active, pieces, progress(0.85, 1));
+  await writePeople(dir, req, found.active, pieces, progress(0.85, 1));
   return { device, realTimeFactor: (performance.now() - t0) / 1000 / seconds };
 }
 

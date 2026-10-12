@@ -1,11 +1,13 @@
 import { DEMUCS, Resampler, SeparationStream, type SeparationModel } from "@spectra-peel/engine";
 import * as ort from "onnxruntime-web/jspi";
+import { z } from "zod";
 import { LayerBlocks } from "../audio/layer-blocks";
 import { FAST_STEMS, SPECIALISTS, type ModelId } from "../models";
 import { dependencies } from "../project/layers";
 import type { Layer, Project } from "../project/schema";
 import { modelBytes } from "../storage/models";
 import { projectDir } from "../storage/opfs";
+import { loadJson, saveJson } from "./checkpoint";
 import { LayerWriter, TileWriter, mono } from "./layer-writer";
 import { createSession } from "./ort-session";
 import type { SeparateMessage, SeparateRequest } from "./protocol";
@@ -177,6 +179,9 @@ async function writeRestTiles(dir: FileSystemDirectoryHandle, req: SeparateReque
   await tiles.finish();
 }
 
+/** How many passes have written all their stems; a resumed run starts after them. */
+const PassesDone = z.object({ done: z.number().int().nonnegative() });
+
 async function separate(req: SeparateRequest): Promise<{ device: string; realTimeFactor: number }> {
   const { project, op, stems, rest } = req;
   const total = project.source.frames;
@@ -184,8 +189,11 @@ async function separate(req: SeparateRequest): Promise<{ device: string; realTim
   const passes = passesFor(req.best);
   const t0 = performance.now();
   let device = "";
+  const resumed = PassesDone.safeParse(await loadJson(dir, op.id, "passes.json"));
+  const skip = resumed.success ? resumed.data.done : 0;
 
   for (const [p, pass] of passes.entries()) {
+    if (p < skip) continue;
     const what =
       pass.keep.length > 1 ? "Separating" : `${stems[pass.keep[0] ?? 0]?.label ?? "Stem"} at best quality`;
     const label = passes.length === 1 ? what : `${what} (${p + 1} of ${passes.length})`;
@@ -205,17 +213,19 @@ async function separate(req: SeparateRequest): Promise<{ device: string; realTim
       await separatePass(dir, project, op.input, created.session, pass.keep, stems, restTiles, (written) => {
         const fraction = (p + written / total) / passes.length;
         const elapsed = (performance.now() - t0) / 1000;
+        const ran = fraction - skip / passes.length;
         post({
           type: "progress",
           fraction,
           stage,
-          etaSeconds: fraction > 0.02 ? (elapsed / fraction) * (1 - fraction) : null,
+          etaSeconds: ran > 0.02 ? (elapsed / ran) * (1 - fraction) : null,
         });
       });
     } finally {
       await created.session.release();
     }
     await restTiles?.finish();
+    await saveJson(dir, op.id, "passes.json", { done: p + 1 });
   }
   if (passes.length > 1) {
     post({ type: "progress", fraction: 1, stage: "Finding what the stems missed", etaSeconds: null });
