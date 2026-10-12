@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { SOURCE_LAYER, type Layer, type Mix, type Project } from "../project/schema";
 import { formatTime } from "./format";
 
@@ -26,6 +26,7 @@ function LayerRow({ layer, project, color, onMix, onAdjust }: RowProps) {
   const solo = mix.solo === layer.id;
   const db = mix.gains[layer.id] ?? 0;
   const held = useRef(false);
+  const slider = useMemo(() => ({ accentColor: color }), [color]);
   return (
     <li
       className="flex items-center gap-2 py-1 pr-2 pl-4 text-sm"
@@ -59,7 +60,8 @@ function LayerRow({ layer, project, color, onMix, onAdjust }: RowProps) {
           held.current = false;
           onAdjust(layer.id, false);
         }}
-        className="w-20 accent-accent sm:w-24"
+        style={slider}
+        className="w-20 sm:w-24"
       />
       <span className="w-10 text-right font-mono text-xs text-dim tabular-nums">
         {db > 0 ? "+" : ""}
