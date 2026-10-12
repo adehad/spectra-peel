@@ -458,7 +458,14 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         </span>
       </div>
       <div className="relative min-h-0 flex-1">
-        <SpectrogramView tiles={tiles} base={base} tints={tints} player={player} selectMode={selectMode} />
+        <SpectrogramView
+          tiles={tiles}
+          base={base}
+          tints={tints}
+          player={player}
+          selectMode={selectMode}
+          focus={focus !== null}
+        />
         {job ? (
           <div
             className="absolute inset-x-0 top-0 flex items-center gap-2 bg-ink/80 px-3 py-1.5 text-xs"

@@ -7,14 +7,16 @@ import { oklchToRgb } from "./palette";
 const STEP = 255 / SPECTROGRAM.floorDb;
 const red = (px: number) => px & 0xff;
 const green = (px: number) => (px >> 8) & 0xff;
+const blue = (px: number) => (px >> 16) & 0xff;
 
-function shade(base: number, levels: number[], tints: Tint[]): number {
+function shade(base: number, levels: number[], tints: Tint[], focus = false): number {
   const out = new Uint32Array(1);
   shadeColumn(
     Uint8Array.of(base),
     levels.map((v) => Uint8Array.of(v)),
     tints,
     out,
+    focus,
   );
   return out[0] ?? 0;
 }
@@ -64,5 +66,15 @@ describe("shadeColumn", () => {
   it("colours a pixel by whichever stem holds most of its energy", () => {
     const px = shade(200, [200, 120], [tint(0, true, [255, 0, 0]), tint(0, true, [0, 255, 0])]);
     expect(red(px)).toBeGreaterThan(green(px));
+  });
+
+  it("greys the base and heat-maps the focused layer by its share of the energy", () => {
+    const grey = shade(200, [0], [tint(0, true)], true);
+    expect(red(grey)).toBe(green(grey));
+    expect(green(grey)).toBe(blue(grey));
+    expect(shade(200, [200], [tint(0, true)], true)).toBe(COLORMAP[200]);
+    const half = shade(200, [150], [tint(0, true)], true);
+    expect(red(half)).not.toBe(blue(half));
+    expect(red(half)).toBeLessThan(red(COLORMAP[150] ?? 0) + red(grey));
   });
 });
