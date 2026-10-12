@@ -59,6 +59,7 @@ export {
   frameGain,
   overlapPieces,
   separateCrosstalk,
+  type CrosstalkOptions,
   type Embed,
   type SeparatedPiece,
   type SpeakerSeparationModel,
