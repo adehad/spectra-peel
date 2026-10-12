@@ -29,7 +29,7 @@ function LayerRow({ layer, project, color, onMix, onAdjust }: RowProps) {
   const slider = useMemo(() => ({ accentColor: color }), [color]);
   return (
     <li
-      className="flex items-center gap-2 py-1 pr-2 pl-4 text-sm"
+      className="flex items-center gap-2 py-1 pr-2 pl-4 text-sm pointer-coarse:py-0"
       data-testid={`layer-${layer.label.toLowerCase()}`}
     >
       <svg viewBox="0 0 10 10" className="size-2.5 shrink-0" aria-hidden="true">

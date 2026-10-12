@@ -487,7 +487,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
       </header>
 
       <Overview peaks={peaks} player={player} />
-      <div className="flex items-center gap-2 border-b border-edge px-3 py-1 text-xs">
+      <div className="flex items-center gap-2 border-b border-edge px-3 py-1 text-xs pointer-coarse:text-sm">
         <label className="flex items-center gap-1 text-dim">
           View
           <select
@@ -575,8 +575,8 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         ) : null}
       </div>
 
-      <div className="h-44 shrink-0 border-t border-edge bg-panel md:grid md:h-48 md:grid-cols-[2fr_1fr] md:grid-rows-1 md:divide-x md:divide-edge">
-        <div className="flex border-b border-edge text-xs md:hidden" role="tablist">
+      <div className="flex h-44 shrink-0 flex-col border-t border-edge bg-panel pointer-coarse:h-56 md:grid md:h-48 md:grid-cols-[2fr_1fr] md:grid-rows-1 md:divide-x md:divide-edge">
+        <div className="flex shrink-0 border-b border-edge text-xs md:hidden" role="tablist">
           {(["live", "layers"] as const).map((t) => (
             <button
               key={t}
@@ -590,10 +590,10 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
             </button>
           ))}
         </div>
-        <div className={`h-[calc(100%-2rem)] md:block md:h-full ${tab === "live" ? "" : "hidden"}`}>
+        <div className={`min-h-0 flex-1 md:block md:h-full ${tab === "live" ? "" : "hidden"}`}>
           <LivePanel layers={liveLayers} sampleRate={rate} />
         </div>
-        <div className={`h-[calc(100%-2rem)] md:block md:h-full ${tab === "layers" ? "" : "hidden"}`}>
+        <div className={`min-h-0 flex-1 md:block md:h-full ${tab === "layers" ? "" : "hidden"}`}>
           <LayersPanel
             project={project}
             colors={colors}
@@ -623,7 +623,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           type="button"
           aria-pressed={selectMode}
           onClick={() => setSelectMode(!selectMode)}
-          className="rounded px-2 py-1 text-xs text-dim aria-pressed:bg-edge aria-pressed:text-zinc-100"
+          className="rounded px-2 py-1 text-sm text-dim aria-pressed:bg-edge aria-pressed:text-zinc-100"
           title="Drag on the spectrogram to select a range (or hold Shift)"
         >
           Select
@@ -632,7 +632,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           type="button"
           disabled={busy}
           onClick={startDenoise}
-          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40"
+          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40 pointer-coarse:order-last"
           data-testid="denoise"
         >
           Denoise {selection ? "selection" : "all"}
@@ -641,7 +641,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           type="button"
           disabled={busy}
           onClick={askStems}
-          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40"
+          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40 pointer-coarse:order-last"
           data-testid="stems"
         >
           Stems
@@ -650,7 +650,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           type="button"
           disabled={busy}
           onClick={askSpeakers}
-          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40"
+          className="rounded bg-edge px-3 py-1 text-sm disabled:opacity-40 pointer-coarse:order-last"
           data-testid="speakers"
         >
           People
@@ -658,7 +658,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
         <button
           type="button"
           onClick={() => setExporting(true)}
-          className="rounded bg-edge px-3 py-1 text-sm"
+          className="rounded bg-edge px-3 py-1 text-sm pointer-coarse:order-last"
           data-testid="export"
         >
           Export
@@ -667,7 +667,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           type="button"
           aria-pressed={follow}
           onClick={() => setFollow(!follow)}
-          className="rounded px-2 py-1 text-xs text-dim aria-pressed:bg-edge aria-pressed:text-zinc-100"
+          className="rounded px-2 py-1 text-sm text-dim aria-pressed:bg-edge aria-pressed:text-zinc-100"
         >
           Follow
         </button>
@@ -676,7 +676,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           aria-label="Zoom out"
           disabled={span >= Math.min(MAX_SPAN, duration)}
           onClick={() => zoom(2, now)}
-          className="size-8 rounded bg-edge disabled:opacity-40"
+          className="size-8 rounded bg-edge disabled:opacity-40 pointer-coarse:hidden"
         >
           −
         </button>
@@ -685,7 +685,7 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
           aria-label="Zoom in"
           disabled={span <= MIN_SPAN}
           onClick={() => zoom(0.5, now)}
-          className="size-8 rounded bg-edge disabled:opacity-40"
+          className="size-8 rounded bg-edge disabled:opacity-40 pointer-coarse:hidden"
         >
           +
         </button>
