@@ -1,7 +1,6 @@
 import {
   BAND_FILL,
   DIARIZATION,
-  FLAC_BLOCK,
   Fbank,
   Resampler,
   clusterVoices,
@@ -264,19 +263,6 @@ function personPlanes(
   return planes;
 }
 
-function readRange(blocks: LayerBlocks, layer: string, channels: number, start: number, end: number) {
-  const out = Array.from({ length: channels }, () => new Float32Array(end - start));
-  for (let k = Math.floor(start / FLAC_BLOCK); k * FLAC_BLOCK < end; k++) {
-    const planes = blocks.block(layer, k);
-    const at = k * FLAC_BLOCK;
-    const from = Math.max(start, at);
-    const to = Math.min(end, at + blocks.blockLength(k));
-    for (const [c, plane] of out.entries())
-      plane.set((planes[c] ?? new Float32Array()).subarray(from - at, to - at), from - start);
-  }
-  return out;
-}
-
 /** What the band fill adds to each person, per channel, over [start, end). */
 interface HighBand {
   start: number;
@@ -377,7 +363,7 @@ async function writePeople(
         const run = runs.shift();
         if (!run) break;
         open.push(...run.pieces);
-        const x = readRange(blocks, op.input, channels, run.start, run.end);
+        const x = blocks.range(op.input, run.start, run.end);
         bands.push(fillCrosstalk(x, run.start, solo, rate, run.pieces));
       }
       const input = blocks.block(op.input, k);
