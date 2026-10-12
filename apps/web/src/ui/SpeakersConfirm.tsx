@@ -26,7 +26,7 @@ export function SpeakersConfirm({ project, input, onRun, onClose }: Props) {
     <RunConfirm
       name="Separate people"
       title={`Separate the people in ${input}`}
-      about="Gives each person a layer of their own. Where one person talks alone their layer is the original audio; where people talk over each other it is separated, at phone-call bandwidth, and some of the other voice remains. Rest holds pauses and background."
+      about="Gives each person a layer of their own. Where one person talks alone their layer is the original audio; where people talk over each other it is separated, and some of the other voice remains. Rest holds pauses and background."
       bytes={bytes}
       seconds={project.source.frames / project.source.sampleRate}
       rtf={RTF}

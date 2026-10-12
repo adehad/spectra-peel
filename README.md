@@ -16,7 +16,7 @@ Work in progress.
 
 Stems need the HT-Demucs model (345 MB), which is not hosted yet: build it with the scripts in `reference/` and add it under **Models**. Any stem can instead come from its htdemucs_ft fine-tuned model (345 MB each, built the same way): tick it under **Best quality**, and each ticked stem adds one more pass over the file.
 
-**People** splits a conversation of two or three people into a layer each, plus Rest for pauses and background. It finds who speaks when with pyannote segmentation-3.0 and WeSpeaker voice embeddings, both downloaded under **Models**, and only separates the stretches where people talk over each other, with TIGER. Those stretches are 16 kHz and keep some of the other voice; everywhere else a person's layer is the original audio. TIGER's export is not hosted yet: build it with `reference/tiger/export_tiger.py` and add it under **Models**.
+**People** splits a conversation of two or three people into a layer each, plus Rest for pauses and background. It finds who speaks when with pyannote segmentation-3.0 and WeSpeaker voice embeddings, both downloaded under **Models**, and only separates the stretches where people talk over each other, with TIGER. TIGER works at 16 kHz, so above 7.5 kHz those stretches get a share of the original's high band instead, and some of the other voice remains; everywhere else a person's layer is the original audio. TIGER's export is not hosted yet: build it with `reference/tiger/export_tiger.py` and add it under **Models**.
 
 Built for desktop Chrome or Edge 137 or later and Chrome on Android, which have the WebAssembly JSPI support this build of ONNX Runtime needs. Firefox and Safari are untested.
 

@@ -63,3 +63,4 @@ export {
   type SeparatedPiece,
   type SpeakerSeparationModel,
 } from "./crosstalk";
+export { BAND_FILL, fillHighBand } from "./bandfill";
