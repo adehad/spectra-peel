@@ -94,6 +94,20 @@ export class LayerBlocks {
     return out;
   }
 
+  /** A layer's samples over [start, end), per channel, across block boundaries. */
+  range(layerId: string, start: number, end: number): Float32Array[] {
+    const out = Array.from({ length: this.project.source.channels }, () => new Float32Array(end - start));
+    for (let k = Math.floor(start / FLAC_BLOCK); k * FLAC_BLOCK < end; k++) {
+      const planes = this.block(layerId, k);
+      const at = k * FLAC_BLOCK;
+      const from = Math.max(start, at);
+      const to = Math.min(end, at + this.blockLength(k));
+      for (const [c, plane] of out.entries())
+        plane.set((planes[c] ?? new Float32Array()).subarray(from - at, to - at), from - start);
+    }
+    return out;
+  }
+
   close(): void {
     for (const f of this.files.values()) f.close();
   }
