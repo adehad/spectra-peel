@@ -1,3 +1,4 @@
+import { Headphones, Volume2, VolumeX } from "lucide-react";
 import { useMemo, useRef } from "react";
 import { SOURCE_LAYER, type Layer, type Mix, type Project } from "../project/schema";
 import { formatTime } from "./format";
@@ -64,6 +65,16 @@ function LayerRow({ layer, project, color, onMix, onAdjust, analyser }: RowProps
   const { mix } = project;
   const muted = mix.muted.includes(layer.id);
   const solo = mix.solo === layer.id;
+  const comparing = mix.ab === "input";
+  const soloed = mix.solo === null ? null : project.layers.find((l) => l.id === mix.solo);
+  // Solo and Compare with source decide what plays over each layer's own mute, so the row shows
+  // what is heard and locks the controls they override.
+  let heard = soloed ? solo : !muted;
+  let silencedBy: string | null = soloed && !solo ? `Muted while ${soloed.label} plays solo` : null;
+  if (comparing) {
+    heard = layer.id === SOURCE_LAYER;
+    silencedBy = "Comparing with the source";
+  }
   const db = mix.gains[layer.id] ?? 0;
   const held = useRef(false);
   const slider = useMemo(() => ({ accentColor: color }), [color]);
@@ -75,13 +86,14 @@ function LayerRow({ layer, project, color, onMix, onAdjust, analyser }: RowProps
       <svg viewBox="0 0 10 10" className="size-2.5 shrink-0" aria-hidden="true">
         <circle cx="5" cy="5" r="5" fill={color} />
       </svg>
-      <span className={`min-w-0 flex-1 truncate ${muted && !solo ? "text-dim" : ""}`}>{layer.label}</span>
+      <span className={`min-w-0 flex-1 truncate ${heard ? "" : "text-dim"}`}>{layer.label}</span>
       <input
         type="range"
         min={-40}
         max={6}
         step={0.5}
         value={db}
+        disabled={comparing}
         aria-label={`${layer.label} gain`}
         onChange={(e) => {
           const value = Number(e.target.value);
@@ -101,7 +113,7 @@ function LayerRow({ layer, project, color, onMix, onAdjust, analyser }: RowProps
           onAdjust(layer.id, false);
         }}
         style={slider}
-        className="w-20 sm:w-24"
+        className="w-20 disabled:opacity-40 sm:w-24"
       />
       <span className="w-14 text-right font-mono text-xs whitespace-nowrap text-dim tabular-nums">
         {db > 0 ? "+" : ""}
@@ -111,31 +123,32 @@ function LayerRow({ layer, project, color, onMix, onAdjust, analyser }: RowProps
         type="button"
         aria-pressed={muted}
         aria-label={`Mute ${layer.label}`}
+        title={silencedBy ?? (muted ? "Unmute" : "Mute")}
+        disabled={silencedBy !== null}
         onClick={() =>
           onMix((m) => ({
             ...m,
             muted: muted ? m.muted.filter((id) => id !== layer.id) : [...m.muted, layer.id],
           }))
         }
-        className="rounded px-1.5 py-0.5 text-xs text-dim aria-pressed:bg-red-500/30 aria-pressed:text-red-200"
+        className="grid place-items-center rounded p-1 text-dim disabled:opacity-40 aria-pressed:bg-red-500/30 aria-pressed:text-red-200"
       >
-        M
+        {heard ? <Volume2 className="size-4" aria-hidden /> : <VolumeX className="size-4" aria-hidden />}
       </button>
       <button
         type="button"
         aria-pressed={solo}
         aria-label={`Solo ${layer.label}`}
+        title={
+          comparing ? "Comparing with the source" : solo ? "Hear every layer again" : "Hear only this layer"
+        }
+        disabled={comparing}
         onClick={() => onMix((m) => ({ ...m, solo: solo ? null : layer.id }))}
-        className="rounded px-1.5 py-0.5 text-xs text-dim aria-pressed:bg-amber-400/30 aria-pressed:text-amber-100"
+        className="grid place-items-center rounded p-1 text-dim disabled:opacity-40 aria-pressed:bg-amber-400/30 aria-pressed:text-amber-100"
       >
-        S
+        <Headphones className="size-4" aria-hidden />
       </button>
-      <LevelMeter
-        analyser={analyser}
-        gainDb={db}
-        color={color}
-        heard={solo || (!muted && project.mix.solo === null)}
-      />
+      <LevelMeter analyser={analyser} gainDb={db} color={color} heard={heard} />
     </li>
   );
 }
