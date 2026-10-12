@@ -91,3 +91,16 @@ export interface SpeakersRequest {
 }
 
 export type SpeakersMessage = SeparateMessage;
+
+export interface ExtractRequest {
+  project: Project;
+  op: Op;
+  /** The FLAC layer for the prompted sound, then the residual whose tiles to write. */
+  target: Layer;
+  rest: Layer;
+  /** One of EXTRACT_PROMPTS. */
+  prompt: string;
+  useGpu: boolean;
+}
+
+export type ExtractMessage = SeparateMessage;

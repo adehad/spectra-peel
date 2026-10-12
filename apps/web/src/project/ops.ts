@@ -160,6 +160,24 @@ export function applySpeakers(project: Project, { op, people, rest }: PlannedSpe
   return applyOp(project, op, [...people, rest], [rest.id]);
 }
 
+export interface PlannedExtract {
+  op: Op;
+  target: Layer;
+  rest: Layer;
+}
+
+/** `prompt` pulled out of `input` over the whole file, and Rest for everything else. */
+export function planExtract(project: Project, input: string, prompt: string): PlannedExtract {
+  const { op, parts, rest } = splitWholeFile(project, input, "extract", ["audiosep-base"], [prompt]);
+  const [target] = parts;
+  if (!target) throw new Error("extract plans one layer");
+  return { op, target, rest };
+}
+
+export function applyExtract(project: Project, { op, target, rest }: PlannedExtract): Project {
+  return applyOp(project, op, [target, rest], [rest.id]);
+}
+
 /** Removes the last op and its layers; returns the project and the files to delete. */
 export function undoLast(project: Project): { project: Project; files: string[] } {
   const op = project.ops.at(-1);

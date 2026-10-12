@@ -39,3 +39,9 @@ Separating people uses three models, none distributed with the app:
 - TIGER by Kai Li and co-authors (https://github.com/JusperLee/TIGER), with weights from https://huggingface.co/JusperLee/TIGER-speech (revision `f0340340b2d9bbf72074edf8c076dcab59a10ba2`). `reference/tiger/export_tiger.py` exports it to ONNX; the weights are unchanged. The weights are Apache-2.0; the code is MIT, Copyright (c) 2026 Kai Li.
 
 The Apache-2.0 licence is at https://www.apache.org/licenses/LICENSE-2.0. The MIT licence text is as above.
+
+## AudioSep
+
+Extract uses the separator from AudioSep by Xubo Liu and co-authors (https://github.com/Audio-AGI/AudioSep), with the base checkpoint `checkpoint/audiosep_base_4M_steps.ckpt` from the Hugging Face Space https://huggingface.co/spaces/Audio-AGI/AudioSep (revision `0807a713283035d8b0d0628f1b8e3d6580459f7b`). It is not distributed with the app. `reference/audiosep/export_audiosep.py` exports the separator to ONNX; the weights are unchanged. The code is MIT, Copyright (c) Xubo Liu, and the Space is marked MIT; neither states a licence for the checkpoint separately.
+
+The app ships `apps/web/src/extract-prompts.json`, CLAP text embeddings of its prompt labels computed with the CLAP text encoder inside that checkpoint, which is LAION-AI's CLAP (https://github.com/LAION-AI/CLAP), released under CC0-1.0, with the RoBERTa tokenizer from https://huggingface.co/FacebookAI/roberta-base (MIT).
