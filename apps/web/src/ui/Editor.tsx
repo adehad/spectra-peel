@@ -552,9 +552,12 @@ function Workspace({ project, setProject, dir, peaks, player, onClose }: Workspa
     () =>
       showSpectrum
         ? project.layers
-            .filter((l) =>
-              project.mix.solo === null ? !project.mix.muted.includes(l.id) : project.mix.solo === l.id,
-            )
+            .filter((l) => {
+              if (project.mix.ab === "input") return l.id === SOURCE_LAYER;
+              return project.mix.solo === null
+                ? !project.mix.muted.includes(l.id)
+                : project.mix.solo === l.id;
+            })
             .toSorted((a, b) => Number(a.id === base) - Number(b.id === base))
             .flatMap((l) => {
               const analyser = player.analysers.get(l.id);

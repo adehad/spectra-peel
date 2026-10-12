@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@spectra-peel/engine": "workspace:*",
+    "lucide-react": "1.48.0",
     "mediabunny": "1.60.0",
     "onnxruntime-web": "1.30.0",
     "react": "19.3.0",
