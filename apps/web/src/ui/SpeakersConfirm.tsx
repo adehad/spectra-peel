@@ -12,7 +12,7 @@ const RTF = { gpu: 0.2, cpu: 1.3 };
 interface Props {
   project: Project;
   input: string;
-  onRun: (people: number, useGpu: boolean) => void;
+  onRun: (people: number, useGpu: boolean, estimateSeconds: number) => void;
   onClose: () => void;
 }
 
@@ -31,7 +31,7 @@ export function SpeakersConfirm({ project, input, onRun, onClose }: Props) {
       seconds={project.source.frames / project.source.sampleRate}
       rtf={RTF}
       runnable
-      onRun={(useGpu) => onRun(people, useGpu)}
+      onRun={(useGpu, estimate) => onRun(people, useGpu, estimate)}
       onClose={onClose}
       runLabel="Separate"
       runTestId="speakers-run"

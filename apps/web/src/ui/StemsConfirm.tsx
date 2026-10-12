@@ -13,7 +13,7 @@ interface Props {
   input: string;
   /** Whether the fast model is stored, and each stem's specialist, in stem order. */
   ready: StemsReady;
-  onRun: (best: number[], useGpu: boolean) => void;
+  onRun: (best: number[], useGpu: boolean, estimateSeconds: number) => void;
   onOpenModels: () => void;
   onClose: () => void;
 }
@@ -42,7 +42,7 @@ export function StemsConfirm({ project, input, ready, onRun, onOpenModels, onClo
       seconds={(project.source.frames / project.source.sampleRate) * passes}
       rtf={RTF}
       runnable={runnable}
-      onRun={(useGpu) => onRun(best, useGpu)}
+      onRun={(useGpu, estimate) => onRun(best, useGpu, estimate)}
       onClose={onClose}
       runLabel="Separate"
       runTestId="stems-run"
