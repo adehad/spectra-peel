@@ -71,7 +71,7 @@ export function StemsConfirm({ project, input, ready, onRun, onOpenModels, onClo
             </label>
           ))}
         </span>
-        <span className="text-xs text-dim">
+        <p className="text-xs text-dim">
           Each ticked stem runs its own fine-tuned model, one more pass over the file.
           {ready.specialists.every(Boolean) ? null : (
             <>
@@ -82,7 +82,7 @@ export function StemsConfirm({ project, input, ready, onRun, onOpenModels, onClo
               to tick more.
             </>
           )}
-        </span>
+        </p>
       </dd>
     </RunConfirm>
   );

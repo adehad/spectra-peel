@@ -63,10 +63,12 @@ export function ModelsPanel({ onClose }: { onClose: () => void }) {
             const working = busy?.id === s.id;
             return (
               <li key={s.id} className="flex flex-col gap-1.5 py-2" data-testid={`model-${s.id}`}>
-                <div className="flex items-baseline gap-2">
+                <div className="flex flex-wrap items-baseline gap-x-2">
                   <span className="font-medium">{spec.label}</span>
-                  <span className="text-xs text-dim">{spec.purpose}</span>
-                  <span className="ml-auto text-xs text-dim tabular-nums">
+                  <span className="order-last basis-full text-xs text-dim sm:order-none sm:basis-auto">
+                    {spec.purpose}
+                  </span>
+                  <span className="ml-auto text-xs whitespace-nowrap text-dim tabular-nums">
                     {spec.bytes > 0 ? formatBytes(spec.bytes) : ""}
                   </span>
                 </div>
@@ -87,7 +89,7 @@ export function ModelsPanel({ onClose }: { onClose: () => void }) {
                     </button>
                   ) : null}
                   {!spec.bundled && !s.ready ? (
-                    <label className="cursor-pointer rounded bg-edge px-2 py-1">
+                    <label className="inline-flex cursor-pointer items-center rounded bg-edge px-2 py-1">
                       Add from file…
                       <input
                         type="file"

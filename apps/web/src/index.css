@@ -19,3 +19,51 @@ body {
   @apply bg-ink text-zinc-100 antialiased;
   overscroll-behavior: none;
 }
+
+/*
+ * Touch screens get the desktop layout scaled up a step, so text, padding and gaps grow together,
+ * and every control is drawn 44 px tall (Apple's minimum) with a 2 px invisible ring around it for a
+ * 48 px hit area (Android's). A mouse keeps the denser desktop sizes. Radios and checkboxes are hit
+ * through their labels. A link-style button inside running text stays text-sized, which WCAG 2.5.8
+ * exempts. Selects and sliders draw no pseudo-elements, so they take the full 48 px themselves.
+ */
+@layer base {
+  @media (pointer: coarse) {
+    html {
+      font-size: 18px;
+    }
+    button,
+    label:has(> input[type="radio"], > input[type="checkbox"], > input[type="file"]) {
+      position: relative;
+      min-height: 44px;
+    }
+    button {
+      min-width: 44px;
+    }
+    button::after,
+    label:has(> input[type="radio"], > input[type="checkbox"], > input[type="file"])::after {
+      content: "";
+      position: absolute;
+      inset: -2px;
+    }
+    select,
+    input[type="range"] {
+      min-height: 48px;
+    }
+    p button {
+      min-height: 0;
+      min-width: 0;
+    }
+    p button::after {
+      content: none;
+    }
+    select {
+      font-size: 16px;
+    }
+    input[type="radio"],
+    input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+    }
+  }
+}
