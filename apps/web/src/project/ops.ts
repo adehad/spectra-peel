@@ -1,5 +1,5 @@
 import { ENGINE_VERSION, layerExtent } from "@spectra-peel/engine";
-import { MODELS, stemModels } from "../models";
+import { MODELS, SPEAKER_MODELS, stemModels, type ModelId } from "../models";
 import { paths } from "../storage/opfs";
 import type { Layer, Op, Project } from "./schema";
 
@@ -75,22 +75,25 @@ export function applyDenoise(project: Project, { op, output, removed }: PlannedD
 
 export const STEMS = ["Drums", "Bass", "Other", "Vocals"] as const;
 
-export interface PlannedSeparate {
+interface WholeFileSplit {
   op: Op;
-  stems: Layer[];
-  /** The input minus every stem: what the model left out. */
+  parts: Layer[];
+  /** The input minus every part: what the models left out. */
   rest: Layer;
 }
 
-/**
- * Four stems of `input` over the whole file, in HT-Demucs' source order. `best` lists the stems to take
- * from their fine-tuned specialists; the rest come from the fast model.
- */
-export function planSeparate(project: Project, input: string, best: readonly number[]): PlannedSeparate {
+/** An op that splits `input` over the whole file into FLAC parts, plus a Rest layer for what they miss. */
+function splitWholeFile(
+  project: Project,
+  input: string,
+  kind: Op["kind"],
+  models: readonly ModelId[],
+  labels: readonly string[],
+): WholeFileSplit {
   const id = shortId();
   const frames = project.source.frames;
-  const stems: Layer[] = STEMS.map((label) => {
-    const layer = `${id}-${label.toLowerCase()}`;
+  const parts: Layer[] = labels.map((label) => {
+    const layer = `${id}-${label.toLowerCase().replaceAll(" ", "")}`;
     return {
       id: layer,
       label,
@@ -106,23 +109,55 @@ export function planSeparate(project: Project, input: string, best: readonly num
     producedBy: id,
     start: 0,
     frames,
-    data: { kind: "residual", minuend: input, subtrahends: stems.map((l) => l.id) },
+    data: { kind: "residual", minuend: input, subtrahends: parts.map((l) => l.id) },
   };
   const op: Op = {
     id,
-    kind: "separate",
+    kind,
     input,
     range: { start: 0, end: frames },
-    model: stemModels(best).map((m) => ({ id: m, sha256: MODELS[m].sha256 })),
+    model: models.map((m) => ({ id: m, sha256: MODELS[m].sha256 })),
     engineVersion: ENGINE_VERSION,
-    outputs: [...stems.map((l) => l.id), rest.id],
+    outputs: [...parts.map((l) => l.id), rest.id],
     createdAt: new Date().toISOString(),
   };
-  return { op, stems, rest };
+  return { op, parts, rest };
+}
+
+export interface PlannedSeparate {
+  op: Op;
+  stems: Layer[];
+  rest: Layer;
+}
+
+/**
+ * Four stems of `input` over the whole file, in HT-Demucs' source order. `best` lists the stems to take
+ * from their fine-tuned specialists; the rest come from the fast model.
+ */
+export function planSeparate(project: Project, input: string, best: readonly number[]): PlannedSeparate {
+  const { op, parts, rest } = splitWholeFile(project, input, "separate", stemModels(best), STEMS);
+  return { op, stems: parts, rest };
 }
 
 export function applySeparate(project: Project, { op, stems, rest }: PlannedSeparate): Project {
   return applyOp(project, op, [...stems, rest], [rest.id]);
+}
+
+export interface PlannedSpeakers {
+  op: Op;
+  people: Layer[];
+  rest: Layer;
+}
+
+/** One layer per person in `input` over the whole file, in the order their voices are first heard. */
+export function planSpeakers(project: Project, input: string, count: number): PlannedSpeakers {
+  const labels = Array.from({ length: count }, (_, i) => `Person ${i + 1}`);
+  const { op, parts, rest } = splitWholeFile(project, input, "speakers", SPEAKER_MODELS, labels);
+  return { op, people: parts, rest };
+}
+
+export function applySpeakers(project: Project, { op, people, rest }: PlannedSpeakers): Project {
+  return applyOp(project, op, [...people, rest], [rest.id]);
 }
 
 /** Removes the last op and its layers; returns the project and the files to delete. */

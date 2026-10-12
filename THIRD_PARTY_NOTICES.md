@@ -29,3 +29,13 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## Speaker separation
+
+Separating people uses three models, none distributed with the app:
+
+- pyannote segmentation-3.0 by Hervé Bredin and contributors (https://huggingface.co/pyannote/segmentation-3.0), as exported to ONNX by sherpa-onnx at https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0 (revision `9403a6902bb58e3d5ae8c7e77c3422de279db2e0`). MIT, Copyright (c) 2022 CNRS. The app downloads it from there.
+- WeSpeaker ECAPA-TDNN 512, trained on VoxCeleb (https://huggingface.co/Wespeaker/wespeaker-voxceleb-ecapa-tdnn512, revision `89426e111abc9ffcc40279baf808e087693c6e9b`). Apache-2.0. The app downloads it from there.
+- TIGER by Kai Li and co-authors (https://github.com/JusperLee/TIGER), with weights from https://huggingface.co/JusperLee/TIGER-speech (revision `f0340340b2d9bbf72074edf8c076dcab59a10ba2`). `reference/tiger/export_tiger.py` exports it to ONNX; the weights are unchanged. The weights are Apache-2.0; the code is MIT, Copyright (c) 2026 Kai Li.
+
+The Apache-2.0 licence is at https://www.apache.org/licenses/LICENSE-2.0. The MIT licence text is as above.

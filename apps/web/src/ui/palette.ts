@@ -35,6 +35,9 @@ const OKLCH: Record<string, readonly [number, number, number]> = {
   Other: [0.82, 0.12, 95],
   Vocals: [0.8, 0.13, 180],
   Rest: [0.6, 0.03, 270],
+  "Person 1": [0.8, 0.14, 75],
+  "Person 2": [0.72, 0.16, 330],
+  "Person 3": [0.8, 0.14, 140],
 };
 
 /** The colour a layer is drawn in everywhere: its legend dot, its meter and its spectrogram tint. */

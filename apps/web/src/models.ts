@@ -16,6 +16,9 @@ export const MODEL_IDS = [
   "htdemucs-ft-bass",
   "htdemucs-ft-other",
   "htdemucs-ft-vocals",
+  "speaker-segmentation",
+  "speaker-embedding",
+  "speaker-separation",
 ] as const;
 export type ModelId = (typeof MODEL_IDS)[number];
 
@@ -31,6 +34,13 @@ export const SPECIALISTS: readonly ModelId[] = [
   "htdemucs-ft-bass",
   "htdemucs-ft-other",
   "htdemucs-ft-vocals",
+];
+
+/** Who speaks when, voice fingerprints, then the crosstalk separator. */
+export const SPEAKER_MODELS: readonly ModelId[] = [
+  "speaker-segmentation",
+  "speaker-embedding",
+  "speaker-separation",
 ];
 
 /** The models a separation runs in turn: the fast model for any stems not in `best`, then a specialist per stem in it. */
@@ -96,4 +106,34 @@ export const MODELS: Record<ModelId, ModelSpec> = {
     "526c7cb51f6ae443b1a923e307e6ca36f96340e10d558fdc2b6c17fab6284a40",
     345_402_157,
   ),
+  "speaker-segmentation": {
+    label: "pyannote segmentation-3.0",
+    purpose: "Who speaks when, for separating people",
+    // sherpa-onnx's export of pyannote/segmentation-3.0.
+    url: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/9403a6902bb58e3d5ae8c7e77c3422de279db2e0/model.onnx",
+    sha256: "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079",
+    bytes: 5_992_913,
+    bundled: false,
+    license: "MIT",
+  },
+  "speaker-embedding": {
+    label: "WeSpeaker ECAPA-TDNN",
+    purpose: "Voice fingerprints, for separating people",
+    url: "https://huggingface.co/Wespeaker/wespeaker-voxceleb-ecapa-tdnn512/resolve/89426e111abc9ffcc40279baf808e087693c6e9b/voxceleb_ECAPA512.onnx",
+    sha256: "f901ae3571912bad4e11e157744cb8b7d77a0b46923b83c410bdbb6c77d69736",
+    bytes: 24_861_931,
+    bundled: false,
+    license: "Apache-2.0",
+  },
+  "speaker-separation": {
+    label: "TIGER",
+    purpose: "Splits two people talking at once",
+    // reference/tiger/export_tiger.py on JusperLee/TIGER-speech at f0340340b2d9bbf72074edf8c076dcab59a10ba2.
+    // Not hosted yet: add it from a file.
+    url: null,
+    sha256: "83c027f2164d79b32f02f2f0e9e9a867ce3bf97544fe88f8b33e224d85533320",
+    bytes: 59_080_388,
+    bundled: false,
+    license: "Apache-2.0",
+  },
 };
